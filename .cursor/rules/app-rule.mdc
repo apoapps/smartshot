@@ -1,0 +1,10 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+siempre usa la ultima documentacion de flutter y provider desde el mcp de quillopy
+
+esta app se llama smartshot, crea una conexion entre un esp32 por bluetooth, y el app esta hecha con flutter , usa un patron con provider de view model controller simple para recibir un json por bluetooth y verlo en el app de flutter
+
+usa patrones basicos de apps escalables bien organizadas, usa variables claras para manejra estados
