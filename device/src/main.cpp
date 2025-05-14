@@ -79,7 +79,7 @@ float measureDistance() {
     }
     
     // Breve pausa entre mediciones
-    delayMicroseconds(10);
+    delayMicroseconds(50);
   }
   
   // Calcular promedio si hay lecturas válidas

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -25,7 +26,7 @@ class SmartShotApp extends StatelessWidget {
     return MaterialApp(
       title: 'SmartShot',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.purple),
         useMaterial3: true,
       ),
       home: const SmartShotHomePage(),
@@ -107,7 +108,7 @@ class SmartShotHomePage extends StatelessWidget {
             ),
           ),
 
-          // Control del LED
+          // Visualización de datos del sensor ultrasónico
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -115,83 +116,91 @@ class SmartShotHomePage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text(
-                    'Control de LED (Pin D13)',
+                    'Sensor Ultrasónico',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 30),
 
-                  // Estado actual del LED
+                  // Contador de Aciertos
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color:
-                          viewModel.ledState
-                              ? Colors.yellow.shade100
-                              : Colors.grey.shade200,
+                      color: Colors.purple.shade100,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade300),
+                      border: Border.all(color: Colors.purple.shade300),
                     ),
                     child: Column(
                       children: [
                         Icon(
-                          Icons.lightbulb,
+                          Icons.score,
                           size: 48,
-                          color:
-                              viewModel.ledState ? Colors.yellow : Colors.grey,
+                          color: Colors.purple,
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'LED está ${viewModel.ledState ? "ENCENDIDO" : "APAGADO"}',
-                          style: const TextStyle(fontSize: 16),
+                          'Aciertos: ${viewModel.aciertos}',
+                          style: const TextStyle(
+                            fontSize: 24, 
+                            fontWeight: FontWeight.bold
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 30),
-
-                  // Botones de control
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed:
-                              viewModel.isConnected
-                                  ? () => viewModel.toggleLed(true)
-                                  : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                          child: const Text('ENCENDER'),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed:
-                              viewModel.isConnected
-                                  ? () => viewModel.toggleLed(false)
-                                  : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                          child: const Text('APAGAR'),
-                        ),
-                      ),
-                    ],
-                  ),
                   const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed:
-                        viewModel.isConnected
-                            ? viewModel.requestLedState
-                            : null,
-                    child: const Text('CONSULTAR ESTADO'),
+
+                  // Visualización de la distancia
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade300),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.straighten,
+                          size: 36,
+                          color: Colors.blue,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Distancia actual:',
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                        Text(
+                          '${viewModel.distancia.toStringAsFixed(1)} cm',
+                          style: const TextStyle(
+                            fontSize: 32, 
+                            fontWeight: FontWeight.bold
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        // Indicador visual si está en rango de detección
+                        // Container(
+                        //   padding: const EdgeInsets.all(8),
+                        //   decoration: BoxDecoration(
+                        //     color: (viewModel.distancia >= 4 && viewModel.distancia <= 50)
+                        //         ? Colors.green.shade100
+                        //         : Colors.orange.shade100,
+                        //     borderRadius: BorderRadius.circular(4),
+                        //   ),
+                        //   child: Text(
+                        //     (viewModel.distancia >= 2 && viewModel.distancia <= 5)
+                        //         ? '¡En rango de detección!'
+                        //         : 'Fuera de rango',
+                        //     style: TextStyle(
+                        //       color: (viewModel.distancia >= 2 && viewModel.distancia <= 5)
+                        //           ? Colors.green.shade800
+                        //           : Colors.orange.shade800,
+                        //       fontWeight: FontWeight.bold,
+                        //     ),
+                        //   ),
+                        // ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -209,10 +218,14 @@ class BluetoothViewModel extends ChangeNotifier {
   bool _isConnected = false;
   bool _isConnecting = false;
   bool _ledState = false;
+  int _aciertos = 0;
+  double _distancia = 0;
 
   bool get isConnected => _isConnected;
   bool get isConnecting => _isConnecting;
   bool get ledState => _ledState;
+  int get aciertos => _aciertos;
+  double get distancia => _distancia;
 
   // Escanear y conectar al primer dispositivo encontrado con el nombre ESP32
   Future<void> scanAndConnect() async {
@@ -359,19 +372,90 @@ class BluetoothViewModel extends ChangeNotifier {
   // Manejar la respuesta recibida del ESP32
   void _handleResponse(List<int> value) {
     try {
-      final String response = utf8.decode(value);
-      print('Respuesta recibida: $response');
+      // Debug: mostrar los bytes recibidos
+      print('Bytes recibidos: ${value.toString()}');
+      
+      // Intenta decodificar sólo si hay bytes suficientes
+      if (value.isEmpty) {
+        print('Se recibió una lista vacía de bytes');
+        return;
+      }
+      
+      // Si recibimos exactamente 4 bytes, podría ser un float IEEE-754
+      if (value.length == 4) {
+        // Intenta tratarlo como un valor flotante (Little Endian)
+        try {
+          // Convertir 4 bytes a ByteData para leer como float
+          final buffer = Uint8List.fromList(value).buffer;
+          final byteData = ByteData.view(buffer);
+          final valorFloat = byteData.getFloat32(0, Endian.little);
+          
+          print('Interpretando como float: $valorFloat');
+          
+          // Actualizar la distancia si parece un valor válido
+          if (valorFloat >= 0 && valorFloat < 1000) {
+            _distancia = valorFloat;
+            notifyListeners();
+            return;
+          }
+        } catch (e) {
+          print('Error al interpretar como float: $e');
+        }
+      }
+      
+      // Intenta convertir bytes a string
+      String response;
+      try {
+        response = utf8.decode(value);
+        print('Texto recibido: $response');
+      } catch (e) {
+        print('Error al decodificar UTF-8: $e');
+        print('Bytes individuales: ${value.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}');
+        return;
+      }
+      
+      // Verificar que el texto tenga formato de JSON
+      if (!response.startsWith('{') || !response.endsWith('}')) {
+        print('Formato no válido de JSON: $response');
+        return;
+      }
+      
+      // Intenta parsear el JSON
+      Map<String, dynamic> data;
+      try {
+        data = jsonDecode(response);
+        print('JSON decodificado: $data');
+      } catch (e) {
+        print('Error al decodificar JSON: $e');
+        return;
+      }
 
-      final Map<String, dynamic> data = jsonDecode(response);
-
-      if (data.containsKey('status') && data.containsKey('state')) {
+      if (data.containsKey('status')) {
         if (data['status'] == 'led') {
           _ledState = data['state'] == 1;
+          notifyListeners();
+        } else if (data['status'] == 'sensor') {
+          if (data.containsKey('distancia')) {
+            try {
+              _distancia = (data['distancia'] as num).toDouble();
+            } catch (e) {
+              print('Error al convertir distancia: $e');
+            }
+          }
+          
+          if (data.containsKey('aciertos')) {
+            try {
+              _aciertos = data['aciertos'] ?? 0;
+            } catch (e) {
+              print('Error al convertir aciertos: $e');
+            }
+          }
+          
           notifyListeners();
         }
       }
     } catch (e) {
-      print('Error al procesar respuesta: $e');
+      print('Error general al procesar respuesta: $e');
     }
   }
 }
