@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:camera/camera.dart';
-import '../features/camera/camera_view_model.dart';
+import 'camera_view_model.dart';
 
 class CameraView extends StatefulWidget {
   const CameraView({super.key});
@@ -48,9 +48,7 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Vista de Cámara'),
-      ),
+ 
       body: Consumer<CameraViewModel>(
         builder: (context, cameraViewModel, child) {
           if (cameraViewModel.isLoading) {
@@ -68,13 +66,11 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
           return Stack(
             children: [
               // Vista de la cámara
-              AspectRatio(
-                aspectRatio: cameraViewModel.cameraController!.value.aspectRatio,
-                child: ClipRRect(
+             ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: CameraPreview(cameraViewModel.cameraController!),
                 ),
-              ),
+              
               
               // Capa para dibujar la detección
               if (cameraViewModel.detectedBall != null)

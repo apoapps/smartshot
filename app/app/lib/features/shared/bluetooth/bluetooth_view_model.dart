@@ -16,12 +16,25 @@ class BluetoothViewModel extends ChangeNotifier {
   bool _ledState = false;
   int _aciertos = 0;
   double _distancia = 0;
+  
+  // Nuevo campo para seguir cuando se detecta un incremento en aciertos
+  int _previousAciertos = 0; 
+  bool _shotDetected = false;
 
   bool get isConnected => _isConnected;
   bool get isConnecting => _isConnecting;
   bool get ledState => _ledState;
   int get aciertos => _aciertos;
   double get distancia => _distancia;
+  
+  // Nuevo getter para informar cuando se detecta un tiro
+  bool get shotDetected {
+    if (_shotDetected) {
+      _shotDetected = false;  // Lo reseteamos para que sea un event de un solo uso
+      return true;
+    }
+    return false;
+  }
 
   // Escanear y conectar al primer dispositivo encontrado con el nombre ESP32
   Future<void> scanAndConnect() async {
@@ -241,7 +254,15 @@ class BluetoothViewModel extends ChangeNotifier {
           
           if (data.containsKey('aciertos')) {
             try {
+              // Guardamos el valor anterior para comparar
+              _previousAciertos = _aciertos;
               _aciertos = data['aciertos'] ?? 0;
+              
+              // Si hubo un incremento en aciertos, activamos la señal
+              if (_aciertos > _previousAciertos) {
+                print('¡Acierto detectado! Incremento de $_previousAciertos a $_aciertos');
+                _shotDetected = true;
+              }
             } catch (e) {
               print('Error al convertir aciertos: $e');
             }

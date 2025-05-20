@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/bluetooth_model.dart';
-import 'camera_view.dart';
+import '../../shared/bluetooth/bluetooth_view_model.dart';
+import '../../camera/camera_view.dart';
 
 class SmartShotHomePage extends StatelessWidget {
   const SmartShotHomePage({super.key});
