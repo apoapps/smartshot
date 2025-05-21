@@ -597,17 +597,16 @@ class CameraViewModel extends ChangeNotifier {
   static BallDetection? _detectBasketball(img.Image? image) {
     if (image == null) return null;
     
-    // Implementación similar al algoritmo de MATLAB proporcionado
     final width = image.width;
     final height = image.height;
     
-    // Umbrales mejorados para detección de color naranja (incluyendo tonos más opacos)
-    const hueMin = 0.0;      // Incluye rojos
-    const hueMax = 0.2;      // Ampliar hacia amarillo-naranja
-    const satMin = 0.2;      // Menor saturación para colores más opacos
-    const valMin = 0.15;     // Detectar colores más oscuros
+    // Enhanced thresholds for orange color detection (including darker shades)
+    const hueMin = 0.0;      // Include reds
+    const hueMax = 0.2;      // Extend toward yellow-orange
+    const satMin = 0.2;      // Lower saturation for more opaque colors
+    const valMin = 0.15;     // Detect darker colors
     
-    // Lista ampliada de colores específicos de balones de baloncesto (en RGB)
+    // Extended list of basketball-specific colors (RGB)
     final List<List<int>> basketballColors = [
       [0xd4, 0x68, 0x50], // d46850
       [0xa5, 0x53, 0x3c], // a5533c
@@ -616,43 +615,41 @@ class CameraViewModel extends ChangeNotifier {
       [0x7f, 0x3a, 0x2d], // 7f3a2d
       [0x6b, 0x4c, 0x51], // 6b4c51
       [0xff, 0xbe, 0xa7], // ffbea7
-      [0xec, 0x74, 0x35], // ec7435 - naranja típico
-      [0xf8, 0x83, 0x27], // f88327 - naranja brillante
-      [0xf9, 0x98, 0x46], // f99846 - naranja más claro
-      [0xbc, 0x53, 0x24], // bc5324 - marrón-naranja oscuro
-      [0xd7, 0x64, 0x33], // d76433 - naranja terracota
-      [0xcd, 0x5a, 0x0a], // cd5a0a - naranja apagado
+      [0xec, 0x74, 0x35], // ec7435 - typical orange
+      [0xf8, 0x83, 0x27], // f88327 - bright orange
+      [0xf9, 0x98, 0x46], // f99846 - lighter orange
+      [0xbc, 0x53, 0x24], // bc5324 - dark orange-brown
+      [0xd7, 0x64, 0x33], // d76433 - terracotta orange
+      [0xcd, 0x5a, 0x0a], // cd5a0a - dull orange
     ];
     
-    // Tolerancia para la comparación de colores específicos
-    const int colorTolerance = 35; // Aumentada para mayor flexibilidad
+    // Tolerance for specific color comparison
+    const int colorTolerance = 40; // Increased for better flexibility in iOS
     
-    // Crear una máscara binaria para los píxeles de color naranja
+    // Create binary mask for orange pixels
     final orangeMask = List.generate(
       height, 
       (_) => List.filled(width, false),
     );
     
-    // Número de píxeles naranjas
+    // Count of orange pixels
     int orangePixelCount = 0;
     
-    // Detectar píxeles naranjas
+    // Detect orange pixels
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
-        // Extraer los componentes RGB usando el método adecuado
         final pixel = image.getPixelSafe(x, y);
         final r = pixel.r.toInt();
         final g = pixel.g.toInt();
         final b = pixel.b.toInt();
         
-        // Verificación directa para los colores específicos de baloncesto
+        // Direct check for basketball-specific colors
         bool isBasketballColor = false;
         for (final color in basketballColors) {
           final rRef = color[0];
           final gRef = color[1];
           final bRef = color[2];
           
-          // Verificar si el color está dentro de la tolerancia
           if ((r - rRef).abs() <= colorTolerance && 
               (g - gRef).abs() <= colorTolerance && 
               (b - bRef).abs() <= colorTolerance) {
@@ -661,20 +658,19 @@ class CameraViewModel extends ChangeNotifier {
           }
         }
         
-        // Verificación adicional para detectar naranjas opacos de forma directa
-        // Esta condición detecta específicamente los tonos más apagados de naranja/marrón
+        // Additional check for opaque oranges directly
         final bool isOpaqueOrange = (r > 90 && r < 240) && 
                                    (g > 40 && g < 170) && 
                                    (b < 120) &&
                                    (r > g * 1.2) && (g > b * 1.1);
         
-        // Convertir a HSV
+        // Convert to HSV
         final hsv = _rgbToHsv(r, g, b);
         final h = hsv[0];
         final s = hsv[1];
         final v = hsv[2];
         
-        // Condición combinada para detectar colores de balón de baloncesto
+        // Combined condition to detect basketball colors
         if (isBasketballColor || 
             (((h >= hueMin && h <= hueMax) || (h >= 0.94 && h <= 1.0)) && 
             (s > satMin) && (v > valMin)) || 
@@ -685,32 +681,31 @@ class CameraViewModel extends ChangeNotifier {
       }
     }
     
-    // Si no hay suficientes píxeles naranjas, no se detecta un balón
+    // If not enough orange pixels, no ball detected
     if (orangePixelCount < 200) return null;
     
-    // Aplicar operaciones morfológicas (cierre morfológico)
+    // Apply morphological operations (closing)
     _applyDilation(orangeMask, 8);
     _applyErosion(orangeMask, 5);
     
-    // Encontrar componentes conectados y seleccionar el más circular
+    // Find connected components and select the most circular one
     final components = _findConnectedComponents(orangeMask);
     
     BallDetection? bestBall;
     double bestCircularity = 0;
     
     for (final component in components) {
-      if (component.pixels.length < 150) continue;  // Filtrar objetos pequeños
+      if (component.pixels.length < 150) continue;  // Filter small objects
       
-      // Calcular propiedades
+      // Calculate properties
       final properties = _calculateRegionProperties(component);
       final circularity = properties['circularity'] ?? 0;
       final radius = properties['radius'] ?? 0;
       final aspectRatio = properties['aspectRatio'] ?? 1.0;
       
-      // Filtrar por forma y tamaño con umbrales ajustados para mayor precisión
-      // Verificar circularidad, tamaño y proporción de aspecto (para evitar óvalos)
-      if (circularity > 0.7 && radius >= 12 && radius <= 300 &&
-          aspectRatio < 1.5 && aspectRatio > 0.67 &&
+      // Filter by shape and size with adjusted thresholds for better precision
+      if (circularity > 0.65 && radius >= 10 && radius <= 300 &&
+          aspectRatio < 1.6 && aspectRatio > 0.6 &&
           circularity > bestCircularity) {
         bestCircularity = circularity;
         bestBall = BallDetection(
@@ -725,7 +720,7 @@ class CameraViewModel extends ChangeNotifier {
   }
   
   static List<double> _rgbToHsv(int r, int g, int b) {
-    // Normalizar RGB [0-255] a [0-1]
+    // Normalize RGB [0-255] to [0-1]
     final rf = r / 255.0;
     final gf = g / 255.0;
     final bf = b / 255.0;
@@ -734,7 +729,7 @@ class CameraViewModel extends ChangeNotifier {
     final cmin = [rf, gf, bf].reduce(min);
     final delta = cmax - cmin;
     
-    // Calcular matiz
+    // Calculate hue
     double h = 0.0;
     if (delta != 0) {
       if (cmax == rf) {
@@ -748,10 +743,10 @@ class CameraViewModel extends ChangeNotifier {
     
     if (h < 0) h += 1.0;
     
-    // Calcular saturación
+    // Calculate saturation
     final s = cmax == 0 ? 0.0 : delta / cmax;
     
-    // Valor
+    // Value
     final v = cmax;
     
     return [h, s, v];
@@ -771,7 +766,7 @@ class CameraViewModel extends ChangeNotifier {
       for (int x = radius; x < width - radius; x++) {
         if (!mask[y][x]) continue;
         
-        // Aplicar dilatación
+        // Apply dilation
         for (int dy = -radius; dy <= radius; dy++) {
           for (int dx = -radius; dx <= radius; dx++) {
             if (dx*dx + dy*dy <= radius*radius) {
@@ -782,7 +777,7 @@ class CameraViewModel extends ChangeNotifier {
       }
     }
     
-    // Copiar resultado de vuelta a la máscara original
+    // Copy result back to the mask
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
         mask[y][x] = result[y][x];
@@ -802,7 +797,7 @@ class CameraViewModel extends ChangeNotifier {
     
     for (int y = radius; y < height - radius; y++) {
       for (int x = radius; x < width - radius; x++) {
-        // Verificar si todos los píxeles en el vecindario son true
+        // Check if all pixels in the neighborhood are true
         bool allTrue = true;
         
         for (int dy = -radius; dy <= radius && allTrue; dy++) {
@@ -820,7 +815,7 @@ class CameraViewModel extends ChangeNotifier {
       }
     }
     
-    // Copiar resultado de vuelta a la máscara original
+    // Copy result back to the mask
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
         mask[y][x] = result[y][x];
@@ -861,7 +856,7 @@ class CameraViewModel extends ChangeNotifier {
     final height = mask.length;
     final width = mask[0].length;
     
-    // Pila para DFS (evitar desbordamiento de pila)
+    // Stack for DFS (to avoid stack overflow)
     final stack = <Point<int>>[];
     stack.add(Point(x, y));
     
@@ -876,7 +871,7 @@ class CameraViewModel extends ChangeNotifier {
       visited[py][px] = true;
       component.pixels.add(Point(px, py));
       
-      // Añadir vecinos a la pila
+      // Add neighbors to the stack
       stack.add(Point(px + 1, py));
       stack.add(Point(px - 1, py));
       stack.add(Point(px, py + 1));
@@ -889,11 +884,11 @@ class CameraViewModel extends ChangeNotifier {
       return {'center': Offset.zero, 'radius': 0, 'circularity': 0, 'aspectRatio': 1.0};
     }
     
-    // Calcular centro
+    // Calculate center
     double sumX = 0;
     double sumY = 0;
     
-    // Encontrar límites para calcular aspect ratio
+    // Find limits to calculate aspect ratio
     int minX = component.pixels[0].x;
     int maxX = component.pixels[0].x;
     int minY = component.pixels[0].y;
@@ -903,7 +898,7 @@ class CameraViewModel extends ChangeNotifier {
       sumX += pixel.x;
       sumY += pixel.y;
       
-      // Actualizar límites
+      // Update limits
       minX = min(minX, pixel.x);
       maxX = max(maxX, pixel.x);
       minY = min(minY, pixel.y);
@@ -914,7 +909,7 @@ class CameraViewModel extends ChangeNotifier {
     final centerY = sumY / component.pixels.length;
     final center = Offset(centerX, centerY);
     
-    // Calcular radio (distancia media al centro)
+    // Calculate radius (average distance to center)
     double sumDist = 0;
     double maxDist = 0;
     
@@ -928,7 +923,7 @@ class CameraViewModel extends ChangeNotifier {
     
     final avgRadius = sumDist / component.pixels.length;
     
-    // Calcular circularidad usando desviación estándar de la distancia al centro
+    // Calculate circularity using standard deviation of distance to center
     double sumDeviation = 0;
     for (final pixel in component.pixels) {
       final dx = pixel.x - centerX;
@@ -939,10 +934,10 @@ class CameraViewModel extends ChangeNotifier {
     
     final avgDeviation = sumDeviation / component.pixels.length;
     
-    // Calcular circularidad (1 = círculo perfecto, menor = menos circular)
+    // Calculate circularity (1 = perfect circle, less = less circular)
     final circularity = 1 - (avgDeviation / avgRadius);
     
-    // Calcular aspect ratio (proporción entre ancho y alto del objeto)
+    // Calculate aspect ratio (proportion between width and height of object)
     final width = maxX - minX + 1;
     final height = maxY - minY + 1;
     final aspectRatio = width / height;

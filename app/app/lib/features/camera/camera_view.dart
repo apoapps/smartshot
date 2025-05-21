@@ -48,7 +48,6 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
- 
       body: Consumer<CameraViewModel>(
         builder: (context, cameraViewModel, child) {
           if (cameraViewModel.isLoading) {
@@ -60,17 +59,16 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
           }
 
           if (!cameraViewModel.isInitialized || cameraViewModel.cameraController == null) {
-            return const Center(child: Text('La cámara no está inicializada'));
+            return const Center(child: Text('Camera not initialized'));
           }
 
           return Stack(
             children: [
               // Vista de la cámara
-             ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: _buildCameraPreview(cameraViewModel),
-                ),
-              
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: _buildCameraPreview(cameraViewModel),
+              ),
               
               // Capa para dibujar la detección
               if (cameraViewModel.detectedBall != null)
@@ -100,7 +98,8 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
                       FloatingActionButton(
                         onPressed: cameraViewModel.switchCamera,
                         heroTag: 'switchCamera',
-                        child: const Icon(Icons.flip_camera_ios),
+                        backgroundColor: Colors.black54,
+                        child: const Icon(Icons.flip_camera_ios, color: Colors.white),
                       ),
                     
                     // Botón para activar/desactivar detección
@@ -108,47 +107,97 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
                       onPressed: cameraViewModel.toggleDetection,
                       heroTag: 'toggleDetection',
                       backgroundColor: cameraViewModel.isDetectionEnabled
-                          ? Colors.green
-                          : Colors.red,
+                          ? Colors.green.withOpacity(0.7)
+                          : Colors.red.withOpacity(0.7),
                       child: Icon(
                         cameraViewModel.isDetectionEnabled
                             ? Icons.visibility
                             : Icons.visibility_off,
+                        color: Colors.white,
                       ),
                     ),
                   ],
                 ),
               ),
               
+              // Indicador de detección
+              Positioned(
+                top: 20,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.black87.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      cameraViewModel.isDetectionEnabled ? 
+                        'Ball Detection Active' : 
+                        'Ball Detection Disabled',
+                      style: TextStyle(
+                        color: cameraViewModel.isDetectionEnabled ? 
+                          Colors.green.shade300 : 
+                          Colors.red.shade300,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              
               // Información de detección
               if (cameraViewModel.detectedBall != null)
                 Positioned(
-                  top: 20,
+                  top: 60,
                   left: 20,
                   child: Container(
-                    padding: const EdgeInsets.all(8),
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.black.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.green.withOpacity(0.7),
+                        width: 2,
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Balón detectado',
-                          style: TextStyle(
-                            color: Colors.green.shade300,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.sports_basketball,
+                              color: Colors.orange.shade300,
+                              size: 24,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Basketball Detected',
+                              style: TextStyle(
+                                color: Colors.green.shade300,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Confianza: ${(cameraViewModel.detectedBall!.confidence * 100).toStringAsFixed(1)}%',
-                          style: const TextStyle(color: Colors.white),
+                        const SizedBox(height: 8),
+                        _buildInfoRow(
+                          'Confidence',
+                          '${(cameraViewModel.detectedBall!.confidence * 100).toStringAsFixed(1)}%',
+                          icon: Icons.verified,
                         ),
-                        Text(
-                          'Tamaño: ${cameraViewModel.detectedBall!.radius.toStringAsFixed(1)} px',
-                          style: const TextStyle(color: Colors.white),
+                        _buildInfoRow(
+                          'Size',
+                          '${cameraViewModel.detectedBall!.radius.toStringAsFixed(1)} px',
+                          icon: Icons.radio_button_checked,
+                        ),
+                        _buildInfoRow(
+                          'Position',
+                          '(${cameraViewModel.detectedBall!.center.dx.toInt()}, ${cameraViewModel.detectedBall!.center.dy.toInt()})',
+                          icon: Icons.gps_fixed,
                         ),
                       ],
                     ),
@@ -161,13 +210,45 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
     );
   }
   
+  Widget _buildInfoRow(String label, String value, {IconData? icon}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Icon(
+              icon,
+              color: Colors.white70,
+              size: 16,
+            ),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            '$label: ',
+            style: const TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
   Widget _buildCameraPreview(CameraViewModel viewModel) {
     // En macOS, es posible que necesitemos manejar la orientación de forma diferente
     try {
       return CameraPreview(viewModel.cameraController!);
     } catch (e) {
       return Center(
-        child: Text('Error al mostrar la cámara: $e', 
+        child: Text('Camera preview error: $e', 
           style: const TextStyle(color: Colors.red),
         ),
       );
@@ -202,24 +283,55 @@ class BallDetectionPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Calcular factores de escala para adaptar coordenadas
+    // Scale factors to adapt coordinates
     final double scaleX = size.width / previewSize.width;
     final double scaleY = size.height / previewSize.height;
     
-    // Calcular centro ajustado
+    // Calculate adjusted center
     double centerX = ballDetection.center.dx * scaleX;
     double centerY = ballDetection.center.dy * scaleY;
     
-    // Ajustar para cámara frontal (espejo)
+    // Adjust for front camera (mirror)
     if (isMirrored) {
       centerX = size.width - centerX;
     }
     
-    // Calcular radio ajustado a la escala
+    // Calculate scaled radius
     final scaledRadius = ballDetection.radius * (scaleX + scaleY) / 2;
     
-    // Dibujar círculo alrededor del balón
-    final paintCircle = Paint()
+    // Draw tracking lines
+    final trackingPaint = Paint()
+      ..color = Colors.green.withOpacity(0.4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    
+    // Horizontal line
+    canvas.drawLine(
+      Offset(0, centerY),
+      Offset(size.width, centerY),
+      trackingPaint,
+    );
+    
+    // Vertical line
+    canvas.drawLine(
+      Offset(centerX, 0),
+      Offset(centerX, size.height),
+      trackingPaint,
+    );
+    
+    // Draw outer glow
+    final outerGlowPaint = Paint()
+      ..color = Colors.green.withOpacity(0.15)
+      ..style = PaintingStyle.fill;
+    
+    canvas.drawCircle(
+      Offset(centerX, centerY),
+      scaledRadius * 1.3,
+      outerGlowPaint,
+    );
+    
+    // Draw detection circle
+    final circlePaint = Paint()
       ..color = Colors.green
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.0;
@@ -227,45 +339,30 @@ class BallDetectionPainter extends CustomPainter {
     canvas.drawCircle(
       Offset(centerX, centerY),
       scaledRadius,
-      paintCircle,
+      circlePaint,
     );
     
-    // Dibujar punto central
-    final paintCenter = Paint()
+    // Draw center point
+    final centerPaint = Paint()
       ..color = Colors.red
-      ..style = PaintingStyle.fill
-      ..strokeWidth = 8.0;
+      ..style = PaintingStyle.fill;
     
     canvas.drawCircle(
       Offset(centerX, centerY),
       8.0,
-      paintCenter,
+      centerPaint,
     );
     
-    // Mostrar coordenadas
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: '(${centerX.toInt()}, ${centerY.toInt()})',
-        style: const TextStyle(
-          color: Colors.yellow,
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          shadows: [
-            Shadow(
-              blurRadius: 3.0,
-              color: Colors.black,
-              offset: Offset(1.0, 1.0),
-            ),
-          ],
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
+    // Draw border around center point
+    final centerBorderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
     
-    textPainter.layout();
-    textPainter.paint(
-      canvas,
-      Offset(centerX + 15, centerY - 15),
+    canvas.drawCircle(
+      Offset(centerX, centerY),
+      8.0,
+      centerBorderPaint,
     );
   }
 
