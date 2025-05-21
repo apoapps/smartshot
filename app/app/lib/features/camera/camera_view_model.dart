@@ -130,13 +130,20 @@ class CameraViewModel extends ChangeNotifier {
         orElse: () => cameras.first,
       );
 
+      // Configurar formato de imagen adecuado según la plataforma
+      final imageFormatGroup = Platform.isAndroid
+          ? ImageFormatGroup.yuv420
+          : Platform.isIOS
+              ? ImageFormatGroup.bgra8888
+              : Platform.isMacOS
+                  ? ImageFormatGroup.bgra8888
+                  : ImageFormatGroup.unknown;
+
       cameraController = CameraController(
         rearCamera,
         ResolutionPreset.high,
         enableAudio: true, // Habilitamos audio para los clips
-        imageFormatGroup: Platform.isAndroid 
-            ? ImageFormatGroup.yuv420 
-            : ImageFormatGroup.bgra8888,
+        imageFormatGroup: imageFormatGroup,
       );
 
       // Inicializar la cámara
@@ -147,8 +154,11 @@ class CameraViewModel extends ChangeNotifier {
       // Comenzar procesamiento de frames
       _startImageStream();
       
-      // Iniciar grabación en loop
-      _startVideoRecording();
+      // Iniciar grabación en loop si no estamos en macOS
+      // En macOS, la grabación de video puede no estar completamente soportada
+      if (!Platform.isMacOS) {
+        _startVideoRecording();
+      }
       
       notifyListeners();
     } catch (e) {
@@ -185,14 +195,21 @@ class CameraViewModel extends ChangeNotifier {
     // Deshacer el controlador actual
     await cameraController!.dispose();
 
+    // Configurar formato de imagen adecuado según la plataforma
+    final imageFormatGroup = Platform.isAndroid
+        ? ImageFormatGroup.yuv420
+        : Platform.isIOS
+            ? ImageFormatGroup.bgra8888
+            : Platform.isMacOS
+                ? ImageFormatGroup.bgra8888
+                : ImageFormatGroup.unknown;
+
     // Crear un nuevo controlador con la nueva cámara
     cameraController = CameraController(
       newCamera,
       ResolutionPreset.high,
       enableAudio: true,
-      imageFormatGroup: Platform.isAndroid 
-          ? ImageFormatGroup.yuv420 
-          : ImageFormatGroup.bgra8888,
+      imageFormatGroup: imageFormatGroup,
     );
 
     try {
@@ -201,8 +218,10 @@ class CameraViewModel extends ChangeNotifier {
       // Reiniciar procesamiento de frames
       _startImageStream();
       
-      // Reiniciar grabación
-      _startVideoRecording();
+      // Reiniciar grabación si no estamos en macOS
+      if (!Platform.isMacOS) {
+        _startVideoRecording();
+      }
       
       isLoading = false;
       notifyListeners();

@@ -28,5 +28,9 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Esta aplicación necesita acceso a tu cámara para detectar y analizar los tiros de baloncesto</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Esta aplicación necesita acceso al micrófono para grabar clips de video con sonido</string>
 </dict>
 </plist>

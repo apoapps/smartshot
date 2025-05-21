@@ -4,6 +4,7 @@ import '../../shared/sessions/view_model/session_view_model.dart';
 import '../../shared/bluetooth/bluetooth_view_model.dart';
 import '../../camera/camera_view.dart';
 import 'package:intl/intl.dart';
+import '../../shared/sessions/data/session_model.dart';
 
 class SessionScreen extends StatefulWidget {
   const SessionScreen({super.key});
@@ -13,13 +14,79 @@ class SessionScreen extends StatefulWidget {
 }
 
 class _SessionScreenState extends State<SessionScreen> {
+  // Variables to track sensor data changes
+  int _initialArduinoShotCount = 0;
+  int _lastArduinoShotCount = 0;
+  int _sessionShotCount = 0;
+  
   @override
   void initState() {
     super.initState();
     // Iniciar la sesión cuando se carga la pantalla
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<SessionViewModel>(context, listen: false).startSession();
+      final sessionViewModel = Provider.of<SessionViewModel>(context, listen: false);
+      final bluetoothViewModel = Provider.of<BluetoothViewModel>(context, listen: false);
+      
+      // Save initial Arduino shot count as baseline
+      _initialArduinoShotCount = bluetoothViewModel.aciertos;
+      _lastArduinoShotCount = _initialArduinoShotCount;
+      
+      debugPrint('Session starting with initial Arduino shot count: $_initialArduinoShotCount');
+      
+      // Start session
+      sessionViewModel.startSession();
+      
+      // Listen for Bluetooth updates
+      bluetoothViewModel.addListener(_handleBluetoothUpdates);
     });
+  }
+  
+  @override
+  void dispose() {
+    // Remove listener when widget is destroyed
+    Provider.of<BluetoothViewModel>(context, listen: false)
+        .removeListener(_handleBluetoothUpdates);
+    super.dispose();
+  }
+  
+  void _handleBluetoothUpdates() {
+    final bluetoothViewModel = Provider.of<BluetoothViewModel>(context, listen: false);
+    final sessionViewModel = Provider.of<SessionViewModel>(context, listen: false);
+    
+    // If session is not active, do nothing
+    if (!sessionViewModel.isSessionActive) return;
+    
+    // Only track changes in Arduino shot counter from JSON
+    final currentArduinoShotCount = bluetoothViewModel.aciertos;
+    
+    // Only increase if the count actually increases
+    if (currentArduinoShotCount > _lastArduinoShotCount) {
+      // Calculate how many new shots were detected
+      final newShotsCount = currentArduinoShotCount - _lastArduinoShotCount;
+      _lastArduinoShotCount = currentArduinoShotCount;
+      
+      // Register each new shot detected
+      for (int i = 0; i < newShotsCount; i++) {
+        _registerSuccessfulShot(sessionViewModel);
+      }
+      
+      debugPrint('Shot detected! Arduino count: $_lastArduinoShotCount (Session shots: $_sessionShotCount)');
+    }
+  }
+  
+  void _registerSuccessfulShot(SessionViewModel sessionViewModel) {
+    // Increment session shot counter
+    _sessionShotCount++;
+    
+    // Register the shot in the session view model
+    sessionViewModel.registerShot(
+      isSuccessful: true,
+      videoPath: '', // Ideally get this from the camera
+      detectionType: ShotDetectionType.sensor,
+      confidenceScore: 1.0,
+    );
+    
+    debugPrint('Successful shot registered! Session shot count: $_sessionShotCount');
   }
 
   @override
@@ -32,28 +99,35 @@ class _SessionScreenState extends State<SessionScreen> {
             Image.asset(
               'assets/logo.png',
               height: 32,
-              errorBuilder: (context, error, stackTrace) => 
-                  const Icon(Icons.sports_basketball, size: 32, color: Colors.white),
+              errorBuilder:
+                  (context, error, stackTrace) => const Icon(
+                    Icons.sports_basketball,
+                    size: 32,
+                    color: Colors.white,
+                  ),
             ),
             const SizedBox(width: 8),
-            const Text(
-              'SmartShot',
-              style: TextStyle(color: Colors.white),
-            ),
+            const Text('SmartShot', style: TextStyle(color: Colors.white)),
             const Spacer(),
             Consumer<BluetoothViewModel>(
               builder: (context, viewModel, _) {
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
-                    color: viewModel.isConnected ? Colors.green.withOpacity(0.2) : Colors.red.withOpacity(0.2),
+                    color:
+                        viewModel.isConnected
+                            ? Colors.green.withOpacity(0.2)
+                            : Colors.red.withOpacity(0.2),
                     border: Border.all(
                       color: viewModel.isConnected ? Colors.green : Colors.red,
                     ),
                   ),
                   child: Text(
-                    viewModel.isConnected ? 'Conectado' : 'Desconectado',
+                    viewModel.isConnected ? 'Connected' : 'Disconnected',
                     style: TextStyle(
                       color: viewModel.isConnected ? Colors.green : Colors.red,
                       fontSize: 12,
@@ -72,45 +146,49 @@ class _SessionScreenState extends State<SessionScreen> {
           switch (sessionViewModel.state) {
             case SessionState.loading:
               return const Center(child: CircularProgressIndicator());
-              
+
             case SessionState.active:
               return _buildActiveSession(sessionViewModel);
-              
+
             case SessionState.paused:
               return _buildPausedSession(sessionViewModel);
-              
+
             case SessionState.completed:
               return _buildCompletedSession(sessionViewModel);
-              
+
             case SessionState.error:
               return Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                    const Icon(
+                      Icons.error_outline,
+                      color: Colors.red,
+                      size: 48,
+                    ),
                     const SizedBox(height: 16),
                     Text(
-                      'Error: ${sessionViewModel.errorMessage ?? "Desconocido"}',
+                      'Error: ${sessionViewModel.errorMessage ?? "Unknown"}',
                       style: const TextStyle(color: Colors.red),
                     ),
                     const SizedBox(height: 24),
                     ElevatedButton(
                       onPressed: () => sessionViewModel.startSession(),
-                      child: const Text('Reintentar'),
+                      child: const Text('Retry'),
                     ),
                   ],
                 ),
               );
-              
+
             case SessionState.initial:
             default:
-              return const Center(child: Text('Iniciando sesión...'));
+              return const Center(child: Text('Starting session...'));
           }
         },
       ),
     );
   }
-  
+
   Widget _buildActiveSession(SessionViewModel viewModel) {
     return Column(
       children: [
@@ -119,7 +197,7 @@ class _SessionScreenState extends State<SessionScreen> {
           child: Column(
             children: [
               const Text(
-                'Partida en progreso...',
+                'Game in progress...',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -140,13 +218,13 @@ class _SessionScreenState extends State<SessionScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   _buildShotCounter(
-                    label: 'Aciertos',
+                    label: 'Successful',
                     count: viewModel.successfulShots,
                     color: Colors.green,
                   ),
                   const SizedBox(width: 24),
                   _buildShotCounter(
-                    label: 'Fallos',
+                    label: 'Missed',
                     count: viewModel.missedShots,
                     color: Colors.red,
                   ),
@@ -155,11 +233,13 @@ class _SessionScreenState extends State<SessionScreen> {
             ],
           ),
         ),
-        
-        const Expanded(
-          child: CameraView(),
+
+        const SizedBox(
+          width: double.infinity,
+          height: 400,
+          child: Positioned(left: 0, right: 0, child: CameraView()),
         ),
-        
+
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
@@ -176,7 +256,7 @@ class _SessionScreenState extends State<SessionScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  child: const Text('Finalizar'),
+                  child: const Text('Finish'),
                 ),
               ),
               const SizedBox(width: 16),
@@ -191,7 +271,7 @@ class _SessionScreenState extends State<SessionScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  child: const Text('Pausar'),
+                  child: const Text('Pause'),
                 ),
               ),
             ],
@@ -200,14 +280,14 @@ class _SessionScreenState extends State<SessionScreen> {
       ],
     );
   }
-  
+
   Widget _buildPausedSession(SessionViewModel viewModel) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Text(
-            'En pausa...',
+            'Paused...',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -228,13 +308,13 @@ class _SessionScreenState extends State<SessionScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _buildShotCounter(
-                label: 'Aciertos',
+                label: 'Successful',
                 count: viewModel.successfulShots,
                 color: Colors.green,
               ),
               const SizedBox(width: 24),
               _buildShotCounter(
-                label: 'Fallos',
+                label: 'Missed',
                 count: viewModel.missedShots,
                 color: Colors.red,
               ),
@@ -252,38 +332,37 @@ class _SessionScreenState extends State<SessionScreen> {
               ),
             ),
             icon: const Icon(Icons.play_arrow),
-            label: const Text('Reanudar'),
+            label: const Text('Resume'),
           ),
           const SizedBox(height: 16),
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
             },
-            child: const Text('Cancelar', style: TextStyle(color: Colors.white70)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.white70),
+            ),
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildCompletedSession(SessionViewModel viewModel) {
     final session = viewModel.currentSession;
     if (session == null) {
-      return const Center(child: Text('Error: Sesión no disponible'));
+      return const Center(child: Text('Error: Session not available'));
     }
-    
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
-            Icons.check_circle_outline,
-            color: Colors.green,
-            size: 72,
-          ),
+          const Icon(Icons.check_circle_outline, color: Colors.green, size: 72),
           const SizedBox(height: 16),
           const Text(
-            '¡Sesión completada!',
+            'Session completed!',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -292,24 +371,21 @@ class _SessionScreenState extends State<SessionScreen> {
           ),
           const SizedBox(height: 24),
           Text(
-            'Duración: ${_formatDuration(session.durationInSeconds)}',
-            style: const TextStyle(
-              fontSize: 18,
-              color: Colors.white70,
-            ),
+            'Duration: ${_formatDuration(session.durationInSeconds)}',
+            style: const TextStyle(fontSize: 18, color: Colors.white70),
           ),
           const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _buildShotCounter(
-                label: 'Aciertos',
+                label: 'Successful',
                 count: session.successfulShots,
                 color: Colors.green,
               ),
               const SizedBox(width: 24),
               _buildShotCounter(
-                label: 'Fallos',
+                label: 'Missed',
                 count: session.missedShots,
                 color: Colors.red,
               ),
@@ -317,7 +393,7 @@ class _SessionScreenState extends State<SessionScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Efectividad: ${session.successRate.toStringAsFixed(1)}%',
+            'Success Rate: ${session.successRate.toStringAsFixed(1)}%',
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -327,7 +403,7 @@ class _SessionScreenState extends State<SessionScreen> {
           const SizedBox(height: 32),
           ElevatedButton(
             onPressed: () {
-              // Volver a la pantalla de dashboard
+              // Return to dashboard screen
               Navigator.of(context).pop();
             },
             style: ElevatedButton.styleFrom(
@@ -335,21 +411,21 @@ class _SessionScreenState extends State<SessionScreen> {
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
             ),
-            child: const Text('Volver al menú principal'),
+            child: const Text('Back to main menu'),
           ),
           const SizedBox(height: 16),
           TextButton(
             onPressed: () {
-              // Ver los clips
-              // Implementar pantalla de galería de clips
+              // View clips
+              // Implement gallery view
             },
-            child: const Text('Ver clips guardados'),
+            child: const Text('View saved clips'),
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildShotCounter({
     required String label,
     required int count,
@@ -367,21 +443,18 @@ class _SessionScreenState extends State<SessionScreen> {
         ),
         Text(
           label,
-          style: TextStyle(
-            fontSize: 16,
-            color: color.withOpacity(0.8),
-          ),
+          style: TextStyle(fontSize: 16, color: color.withOpacity(0.8)),
         ),
       ],
     );
   }
-  
+
   String _formatDuration(int seconds) {
     final duration = Duration(seconds: seconds);
     final hours = duration.inHours.toString().padLeft(1, '0');
     final minutes = (duration.inMinutes % 60).toString().padLeft(2, '0');
     final secs = (duration.inSeconds % 60).toString().padLeft(2, '0');
-    
+
     return hours == '0' ? '$minutes:$secs' : '$hours:$minutes:$secs';
   }
-} 
+}

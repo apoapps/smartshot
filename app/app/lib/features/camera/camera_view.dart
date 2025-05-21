@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:camera/camera.dart';
@@ -68,7 +68,7 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
               // Vista de la cámara
              ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: CameraPreview(cameraViewModel.cameraController!),
+                  child: _buildCameraPreview(cameraViewModel),
                 ),
               
               
@@ -78,10 +78,7 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
                   child: CustomPaint(
                     painter: BallDetectionPainter(
                       ballDetection: cameraViewModel.detectedBall!,
-                      previewSize: Size(
-                        cameraViewModel.cameraController!.value.previewSize!.height,
-                        cameraViewModel.cameraController!.value.previewSize!.width,
-                      ),
+                      previewSize: _getPreviewSize(cameraViewModel),
                       screenSize: MediaQuery.of(context).size,
                       isMirrored: cameraViewModel.cameraController!.description.lensDirection 
                           == CameraLensDirection.front,
@@ -98,11 +95,13 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     // Botón para cambiar de cámara
-                    FloatingActionButton(
-                      onPressed: cameraViewModel.switchCamera,
-                      heroTag: 'switchCamera',
-                      child: const Icon(Icons.flip_camera_ios),
-                    ),
+                    // En macOS, podrías querer verificar si hay múltiples cámaras disponibles
+                    if (cameraViewModel.cameras.length > 1)
+                      FloatingActionButton(
+                        onPressed: cameraViewModel.switchCamera,
+                        heroTag: 'switchCamera',
+                        child: const Icon(Icons.flip_camera_ios),
+                      ),
                     
                     // Botón para activar/desactivar detección
                     FloatingActionButton(
@@ -159,6 +158,31 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
           );
         },
       ),
+    );
+  }
+  
+  Widget _buildCameraPreview(CameraViewModel viewModel) {
+    // En macOS, es posible que necesitemos manejar la orientación de forma diferente
+    try {
+      return CameraPreview(viewModel.cameraController!);
+    } catch (e) {
+      return Center(
+        child: Text('Error al mostrar la cámara: $e', 
+          style: const TextStyle(color: Colors.red),
+        ),
+      );
+    }
+  }
+  
+  Size _getPreviewSize(CameraViewModel viewModel) {
+    if (viewModel.cameraController == null || 
+        viewModel.cameraController!.value.previewSize == null) {
+      return const Size(16, 9); // Tamaño predeterminado si no hay información
+    }
+    
+    return Size(
+      viewModel.cameraController!.value.previewSize!.height,
+      viewModel.cameraController!.value.previewSize!.width,
     );
   }
 }
