@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:camera/camera.dart';
@@ -12,18 +13,27 @@ class CameraView extends StatefulWidget {
   State<CameraView> createState() => _CameraViewState();
 }
 
-class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
+class _CameraViewState extends State<CameraView> with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+  
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     // Inicializar la cámara cuando se crea el widget
     Provider.of<CameraViewModel>(context, listen: false).initializeCamera();
+    
+    // Create animation controller for the tracking effect
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _pulseController.dispose();
     super.dispose();
   }
 
@@ -73,16 +83,32 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
               // Capa para dibujar la detección
               if (cameraViewModel.detectedBall != null)
                 Positioned.fill(
-                  child: CustomPaint(
-                    painter: BallDetectionPainter(
-                      ballDetection: cameraViewModel.detectedBall!,
-                      previewSize: _getPreviewSize(cameraViewModel),
-                      screenSize: MediaQuery.of(context).size,
-                      isMirrored: cameraViewModel.cameraController!.description.lensDirection 
-                          == CameraLensDirection.front,
-                    ),
+                  child: AnimatedBuilder(
+                    animation: _pulseController,
+                    builder: (context, child) {
+                      return CustomPaint(
+                        painter: BallDetectionPainter(
+                          ballDetection: cameraViewModel.detectedBall!,
+                          previewSize: _getPreviewSize(cameraViewModel),
+                          screenSize: MediaQuery.of(context).size,
+                          isMirrored: cameraViewModel.cameraController!.description.lensDirection 
+                              == CameraLensDirection.front,
+                          pulseValue: _pulseController.value,
+                        ),
+                      );
+                    },
                   ),
                 ),
+              
+              // Target frame overlay for better visualization
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: TargetFramePainter(
+                    screenSize: MediaQuery.of(context).size,
+                    isActive: cameraViewModel.isDetectionEnabled,
+                  ),
+                ),
+              ),
               
               // Panel de controles
               Positioned(
@@ -268,17 +294,69 @@ class _CameraViewState extends State<CameraView> with WidgetsBindingObserver {
   }
 }
 
+class TargetFramePainter extends CustomPainter {
+  final Size screenSize;
+  final bool isActive;
+  
+  TargetFramePainter({
+    required this.screenSize,
+    required this.isActive,
+  });
+  
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (!isActive) return;
+    
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = min(size.width, size.height) * 0.3;
+    
+    // Draw subtle target frame
+    final framePaint = Paint()
+      ..color = Colors.white.withOpacity(0.15)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    
+    // Outer circle
+    canvas.drawCircle(center, radius, framePaint);
+    
+    // Center crosshair
+    final crosshairPaint = Paint()
+      ..color = Colors.white.withOpacity(0.15)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.5;
+    
+    // Horizontal line
+    canvas.drawLine(
+      Offset(center.dx - 15, center.dy),
+      Offset(center.dx + 15, center.dy),
+      crosshairPaint,
+    );
+    
+    // Vertical line
+    canvas.drawLine(
+      Offset(center.dx, center.dy - 15),
+      Offset(center.dx, center.dy + 15),
+      crosshairPaint,
+    );
+  }
+  
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
 class BallDetectionPainter extends CustomPainter {
   final BallDetection ballDetection;
   final Size previewSize;
   final Size screenSize;
   final bool isMirrored;
+  final double pulseValue;
 
   BallDetectionPainter({
     required this.ballDetection,
     required this.previewSize,
     required this.screenSize,
     this.isMirrored = false,
+    this.pulseValue = 0.5,
   });
 
   @override
@@ -299,42 +377,99 @@ class BallDetectionPainter extends CustomPainter {
     // Calculate scaled radius
     final scaledRadius = ballDetection.radius * (scaleX + scaleY) / 2;
     
-    // Draw tracking lines
+    // Draw tracking lines - animated opacity based on pulse value
     final trackingPaint = Paint()
-      ..color = Colors.green.withOpacity(0.4)
+      ..color = Colors.green.withOpacity(0.2 + (pulseValue * 0.4))
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
+      ..strokeWidth = 1.0;
     
-    // Horizontal line
-    canvas.drawLine(
-      Offset(0, centerY),
-      Offset(size.width, centerY),
+    // Tracking box
+    final boxSize = scaledRadius * 2.2;
+    final rect = Rect.fromCenter(
+      center: Offset(centerX, centerY),
+      width: boxSize,
+      height: boxSize,
+    );
+    
+    // Draw tracking box with rounded corners
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, Radius.circular(boxSize * 0.2)),
       trackingPaint,
     );
     
-    // Vertical line
+    // Draw corner marks for better tracking visualization
+    final cornerPaint = Paint()
+      ..color = Colors.green.withOpacity(0.3 + (pulseValue * 0.7))
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    
+    final cornerSize = boxSize * 0.15;
+    
+    // Top-left corner
     canvas.drawLine(
-      Offset(centerX, 0),
-      Offset(centerX, size.height),
-      trackingPaint,
+      Offset(rect.left, rect.top),
+      Offset(rect.left + cornerSize, rect.top),
+      cornerPaint,
+    );
+    canvas.drawLine(
+      Offset(rect.left, rect.top),
+      Offset(rect.left, rect.top + cornerSize),
+      cornerPaint,
     );
     
-    // Draw outer glow
+    // Top-right corner
+    canvas.drawLine(
+      Offset(rect.right, rect.top),
+      Offset(rect.right - cornerSize, rect.top),
+      cornerPaint,
+    );
+    canvas.drawLine(
+      Offset(rect.right, rect.top),
+      Offset(rect.right, rect.top + cornerSize),
+      cornerPaint,
+    );
+    
+    // Bottom-left corner
+    canvas.drawLine(
+      Offset(rect.left, rect.bottom),
+      Offset(rect.left + cornerSize, rect.bottom),
+      cornerPaint,
+    );
+    canvas.drawLine(
+      Offset(rect.left, rect.bottom),
+      Offset(rect.left, rect.bottom - cornerSize),
+      cornerPaint,
+    );
+    
+    // Bottom-right corner
+    canvas.drawLine(
+      Offset(rect.right, rect.bottom),
+      Offset(rect.right - cornerSize, rect.bottom),
+      cornerPaint,
+    );
+    canvas.drawLine(
+      Offset(rect.right, rect.bottom),
+      Offset(rect.right, rect.bottom - cornerSize),
+      cornerPaint,
+    );
+    
+    // Draw outer glow with animated size
+    final pulseRadius = scaledRadius * (1.0 + pulseValue * 0.3);
     final outerGlowPaint = Paint()
-      ..color = Colors.green.withOpacity(0.15)
+      ..color = Colors.green.withOpacity(0.1 + (0.15 * pulseValue))
       ..style = PaintingStyle.fill;
     
     canvas.drawCircle(
       Offset(centerX, centerY),
-      scaledRadius * 1.3,
+      pulseRadius,
       outerGlowPaint,
     );
     
     // Draw detection circle
     final circlePaint = Paint()
-      ..color = Colors.green
+      ..color = Colors.green.withOpacity(0.5 + (pulseValue * 0.5))
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0;
+      ..strokeWidth = 2.5;
     
     canvas.drawCircle(
       Offset(centerX, centerY),
@@ -344,24 +479,24 @@ class BallDetectionPainter extends CustomPainter {
     
     // Draw center point
     final centerPaint = Paint()
-      ..color = Colors.red
+      ..color = Colors.red.withOpacity(0.7 + (pulseValue * 0.3))
       ..style = PaintingStyle.fill;
     
     canvas.drawCircle(
       Offset(centerX, centerY),
-      8.0,
+      5.0 + (pulseValue * 3.0), // Animated size
       centerPaint,
     );
     
     // Draw border around center point
     final centerBorderPaint = Paint()
-      ..color = Colors.white
+      ..color = Colors.white.withOpacity(0.5 + (pulseValue * 0.5))
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
+      ..strokeWidth = 1.0;
     
     canvas.drawCircle(
       Offset(centerX, centerY),
-      8.0,
+      5.0 + (pulseValue * 3.0), // Match animated size
       centerBorderPaint,
     );
   }

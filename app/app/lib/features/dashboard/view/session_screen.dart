@@ -56,37 +56,41 @@ class _SessionScreenState extends State<SessionScreen> {
     // If session is not active, do nothing
     if (!sessionViewModel.isSessionActive) return;
     
+    // COMENTADO: Ya no necesitamos detectar tiros aquí porque CameraViewModel
+    // se encarga de detectar y registrar tiros con videos automáticamente
+    
     // Only track changes in Arduino shot counter from JSON
-    final currentArduinoShotCount = bluetoothViewModel.aciertos;
+    // final currentArduinoShotCount = bluetoothViewModel.aciertos;
     
     // Only increase if the count actually increases
-    if (currentArduinoShotCount > _lastArduinoShotCount) {
-      // Calculate how many new shots were detected
-      final newShotsCount = currentArduinoShotCount - _lastArduinoShotCount;
-      _lastArduinoShotCount = currentArduinoShotCount;
-      
-      // Register each new shot detected
-      for (int i = 0; i < newShotsCount; i++) {
-        _registerSuccessfulShot(sessionViewModel);
-      }
-      
-      debugPrint('Shot detected! Arduino count: $_lastArduinoShotCount (Session shots: $_sessionShotCount)');
-    }
+    // if (currentArduinoShotCount > _lastArduinoShotCount) {
+    //   // Calculate how many new shots were detected
+    //   final newShotsCount = currentArduinoShotCount - _lastArduinoShotCount;
+    //   _lastArduinoShotCount = currentArduinoShotCount;
+    //   
+    //   // Register each new shot detected
+    //   for (int i = 0; i < newShotsCount; i++) {
+    //     _registerSuccessfulShot(sessionViewModel);
+    //   }
+    //   
+    //   debugPrint('Shot detected! Arduino count: $_lastArduinoShotCount (Session shots: $_sessionShotCount)');
+    // }
   }
   
   void _registerSuccessfulShot(SessionViewModel sessionViewModel) {
-    // Increment session shot counter
-    _sessionShotCount++;
-    
-    // Register the shot in the session view model
-    sessionViewModel.registerShot(
-      isSuccessful: true,
-      videoPath: '', // Ideally get this from the camera
-      detectionType: ShotDetectionType.sensor,
-      confidenceScore: 1.0,
-    );
-    
-    debugPrint('Successful shot registered! Session shot count: $_sessionShotCount');
+    // COMENTADO: Ya no necesario - CameraViewModel registra los tiros
+    // // Increment session shot counter
+    // _sessionShotCount++;
+    // 
+    // // Register the shot in the session view model
+    // sessionViewModel.registerShot(
+    //   isSuccessful: true,
+    //   videoPath: '', // Ideally get this from the camera
+    //   detectionType: ShotDetectionType.sensor,
+    //   confidenceScore: 1.0,
+    // );
+    // 
+    // debugPrint('Successful shot registered! Session shot count: $_sessionShotCount');
   }
 
   @override

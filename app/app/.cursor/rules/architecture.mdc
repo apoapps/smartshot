@@ -5,3 +5,4 @@ alwaysApply: true
 ---
 Use mvvm arquitecture with provider always
 
+-the app is intented to record basketball plays and detect good plays and bad plays in one session, recording the previous 10seconds of video per session

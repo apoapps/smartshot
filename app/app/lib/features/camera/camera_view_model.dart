@@ -44,7 +44,15 @@ class CameraViewModel extends ChangeNotifier {
   BallDetection? detectedBall;
   bool isDetectionEnabled = true;
   
-  // Variables para la grabación de video
+  // Variables para la grabación continua con buffer
+  bool _isContinuousRecording = false;
+  Timer? _recordingTimer;
+  CircularBuffer<String> _videoBuffer = CircularBuffer(3); // Buffer para 3 segmentos de ~3-4 segundos cada uno
+  String? _currentRecordingPath;
+  DateTime? _currentSegmentStartTime;
+  int _segmentCounter = 0;
+  
+  // Variables para detección de tiros
   bool isRecordingVideo = false;
   XFile? currentRecordingFile;
   DateTime? _recordingStartTime;
@@ -154,10 +162,9 @@ class CameraViewModel extends ChangeNotifier {
       // Comenzar procesamiento de frames
       _startImageStream();
       
-      // Iniciar grabación en loop si no estamos en macOS
-      // En macOS, la grabación de video puede no estar completamente soportada
+      // Iniciar grabación continua en loop si no estamos en macOS
       if (!Platform.isMacOS) {
-        _startVideoRecording();
+        await _startContinuousRecording();
       }
       
       notifyListeners();
@@ -266,28 +273,74 @@ class CameraViewModel extends ChangeNotifier {
 
   Future<void> _processImageForBallDetection(CameraImage image) async {
     try {
-      // Convertir imagen de cámara a formato adecuado
       final processedImage = await compute(_convertCameraImageToImage, image);
       
-      // Detectar balón usando procesamiento de color
       final ballDetection = await compute(_detectBasketball, processedImage);
       
-      // Guardar en el buffer y en la variable actual
+      // Apply temporal filtering to reduce false positives
+      if (ballDetection != null) {
+        // If we have a new detection, check if it's consistent with previous ones
+        if (_detectionBuffer.isNotEmpty) {
+          final validDetections = _detectionBuffer.toList()
+              .where((d) => d != null)
+              .toList();
+          
+          if (validDetections.isNotEmpty) {
+            // Check if new detection is close to previous ones
+            bool isConsistentWithPrevious = false;
+            for (final prevDetection in validDetections) {
+              final dx = ballDetection.center.dx - prevDetection!.center.dx;
+              final dy = ballDetection.center.dy - prevDetection.center.dy;
+              final distance = sqrt(dx * dx + dy * dy);
+              
+              // If the new detection is close to any previous valid detection
+              if (distance < ballDetection.radius * 2) {
+                isConsistentWithPrevious = true;
+                break;
+              }
+            }
+            
+            // Only accept detection if it's consistent with previous ones
+            // or if we haven't had any valid detections recently
+            if (!isConsistentWithPrevious && validDetections.length >= 3) {
+              // Reject this detection as a false positive
+              _detectionBuffer.add(null);
+              notifyListeners();
+              isProcessingFrame = false;
+              return;
+            }
+          }
+        }
+      } else {
+        // If there's no detection, check if we've had consistent detections before
+        final validDetections = _detectionBuffer.toList()
+            .where((d) => d != null)
+            .take(5)
+            .toList();
+            
+        // Keep the last valid detection if we've had consistent detections
+        if (validDetections.length >= 3) {
+          _detectionBuffer.add(detectedBall);
+          notifyListeners();
+          isProcessingFrame = false;
+          return;
+        }
+      }
+      
+      // Add the current detection to the buffer
       _detectionBuffer.add(ballDetection);
       detectedBall = ballDetection;
       
-      // Guarda el último frame procesado
       if (processedImage != null) {
         final pngBytes = img.encodePng(processedImage);
         lastProcessedFrame = Uint8List.fromList(pngBytes);
       }
       
-      // Detectar movimiento del balón
       _detectBasketballMotion();
       
       notifyListeners();
     } catch (e) {
-      debugPrint('Error en procesamiento de imagen: $e');
+      debugPrint('Image processing error: $e');
     } finally {
       isProcessingFrame = false;
     }
@@ -360,11 +413,17 @@ class CameraViewModel extends ChangeNotifier {
     final now = DateTime.now();
     if (_lastShotDetectionTime != null && 
         now.difference(_lastShotDetectionTime!).inSeconds < 2) {
+      debugPrint('🚫 Detección ignorada - muy reciente (debounce)');
       return;
     }
     
     _lastShotDetectionTime = now;
     _isShotDetected = true;
+    
+    debugPrint('🏀 TIRO DETECTADO:');
+    debugPrint('   ✨ Tipo: ${isSuccessful ? "ACIERTO" : "FALLO"}');
+    debugPrint('   🔍 Detección: $detectionType');
+    debugPrint('   📦 Segmentos en buffer: ${_videoBuffer.length}');
     
     // Actualizar contadores
     _totalShots++;
@@ -372,20 +431,30 @@ class CameraViewModel extends ChangeNotifier {
       _successfulShots++;
     }
     
-    // Guardar el video actual con recorte
-    final videoFile = await _saveCurrentRecording();
+    // Guardar el video de los últimos 10 segundos desde el buffer
+    final videoFile = await _createClipFromBuffer();
     
     if (videoFile != null) {
+      debugPrint('✅ Clip creado correctamente');
+      
       // Registrar el clip en la sesión
       final videoPath = videoFile.path;
       final confidence = detectedBall?.confidence ?? 0.0;
       
-      // Registrar el tiro en el modelo de sesión
-      await _registerShotInSession(isSuccessful, videoPath, detectionType, confidence);
+      // Verificar que el archivo realmente existe antes de registrarlo
+      final file = File(videoPath);
+      if (await file.exists()) {
+        final fileSize = await file.length();
+        debugPrint('📁 Archivo verificado: $videoPath (${fileSize} bytes)');
+        
+        // Registrar el tiro en el modelo de sesión
+        await _registerShotInSession(isSuccessful, videoPath, detectionType, confidence);
+      } else {
+        debugPrint('❌ ERROR: El archivo del clip no existe después de crearlo: $videoPath');
+      }
+    } else {
+      debugPrint('❌ ERROR: No se pudo crear el clip de video');
     }
-    
-    // Reiniciar la grabación
-    await _startVideoRecording();
     
     // Reiniciar las variables de detección
     _isShotDetected = false;
@@ -454,61 +523,207 @@ class CameraViewModel extends ChangeNotifier {
     }
   }
 
-  Future<XFile?> _saveCurrentRecording() async {
-    if (!isInitialized || cameraController == null || !isRecordingVideo) return null;
+  /// Inicia la grabación continua con buffer circular
+  Future<void> _startContinuousRecording() async {
+    if (!isInitialized || cameraController == null || _isContinuousRecording) {
+      debugPrint('⚠️ No se puede iniciar grabación continua - Inicializado: $isInitialized, Controller: ${cameraController != null}, Ya grabando: $_isContinuousRecording');
+      return;
+    }
     
     try {
-      // Detener la grabación actual
-      final videoFile = await _stopVideoRecording();
+      _isContinuousRecording = true;
+      _segmentCounter = 0;
       
-      if (videoFile != null && currentRecordingFile != null) {
-        // Calcular duración del video para recortar
-        final videoDuration = _recordingStartTime != null 
-            ? DateTime.now().difference(_recordingStartTime!) : const Duration(seconds: 0);
-        
-        // Para videos largos (>10s), realizar recorte
-        if (videoDuration.inSeconds > 10) {
-          try {
-            // Guardar el video recortado (solo los últimos 5-10 segundos)
-            return await _trimVideo(videoFile, currentRecordingFile!.path, videoDuration);
-          } catch (e) {
-            debugPrint('Error al recortar video: $e');
-            // Si falla el recorte, usamos el video completo
-          }
-        }
-            
-        try {
-          // Si el video es corto o falló el recorte, copia el archivo completo
-          final destFile = File(currentRecordingFile!.path);
-          await File(videoFile.path).copy(destFile.path);
-          return currentRecordingFile;
-        } catch (e) {
-          debugPrint('Error al copiar archivo: $e');
-          // Intentar mover el archivo en lugar de copiarlo
-          final destFile = File(currentRecordingFile!.path);
-          await File(videoFile.path).rename(destFile.path);
-          return currentRecordingFile;
-        }
-      }
+      debugPrint('🎬 Iniciando grabación continua...');
       
-      return null;
+      // Iniciar el primer segmento
+      await _startNewRecordingSegment();
+      
+      // Configurar timer para crear nuevos segmentos cada 3-4 segundos
+      _recordingTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+        if (_isContinuousRecording) {
+          await _rotateRecordingSegment();
+        }
+      });
+      
+      debugPrint('✅ Grabación continua iniciada con buffer circular');
+      
     } catch (e) {
-      debugPrint('Error al guardar grabación: $e');
-      return null;
+      debugPrint('💥 Error al iniciar grabación continua: $e');
+      _isContinuousRecording = false;
     }
   }
   
-  Future<XFile> _trimVideo(XFile originalVideo, String outputPath, Duration videoDuration) async {
-    // TODO: Implementar recorte de video con FFmpeg o similar
-    // Por ahora, simplemente copiamos el archivo original
+  /// Inicia un nuevo segmento de grabación
+  Future<void> _startNewRecordingSegment() async {
+    if (!isInitialized || cameraController == null) {
+      debugPrint('⚠️ No se puede iniciar nuevo segmento - No inicializado');
+      return;
+    }
     
-    // Simulamos el recorte
-    debugPrint('Recortando video de $videoDuration segundos a 10 segundos...');
-    await Future.delayed(const Duration(milliseconds: 200));
+    try {
+      // Generar path único para este segmento
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      _currentRecordingPath = await _sessionRepository.getNewVideoFilePath();
+      _currentRecordingPath = _currentRecordingPath!.replaceAll('.mp4', '_segment_${_segmentCounter}_$timestamp.mp4');
+      
+      debugPrint('🎥 Iniciando segmento #$_segmentCounter: $_currentRecordingPath');
+      
+      // Iniciar grabación
+      await cameraController!.startVideoRecording();
+      _currentSegmentStartTime = DateTime.now();
+      _segmentCounter++;
+      
+      debugPrint('✅ Segmento iniciado exitosamente');
+      
+    } catch (e) {
+      debugPrint('💥 Error al iniciar nuevo segmento: $e');
+    }
+  }
+  
+  /// Rota al siguiente segmento del buffer circular
+  Future<void> _rotateRecordingSegment() async {
+    if (!isInitialized || cameraController == null || !_isContinuousRecording) {
+      debugPrint('⚠️ No se puede rotar segmento - Estado inválido');
+      return;
+    }
     
-    // Copiar el archivo original como solución provisional
-    await File(originalVideo.path).copy(outputPath);
-    return XFile(outputPath);
+    try {
+      debugPrint('🔄 Rotando al siguiente segmento...');
+      
+      // Detener la grabación actual
+      final recordedFile = await cameraController!.stopVideoRecording();
+      
+      debugPrint('⏹️ Grabación detenida: ${recordedFile.path}');
+      
+      // Copiar el archivo al path deseado si es necesario
+      if (_currentRecordingPath != null && recordedFile.path != _currentRecordingPath) {
+        await File(recordedFile.path).copy(_currentRecordingPath!);
+        await File(recordedFile.path).delete();
+        debugPrint('📁 Archivo movido a: $_currentRecordingPath');
+      }
+      
+      // Agregar al buffer circular (esto automáticamente elimina el más antiguo si está lleno)
+      if (_currentRecordingPath != null) {
+        // Si el buffer está lleno, eliminar el archivo más antiguo
+        if (_videoBuffer.isFilled) {
+          final oldestFile = _videoBuffer.first;
+          if (oldestFile != null && await File(oldestFile).exists()) {
+            await File(oldestFile).delete();
+            debugPrint('🗑️ Archivo antiguo eliminado: $oldestFile');
+          }
+        }
+        
+        // Verificar el tamaño del archivo antes de agregarlo
+        final file = File(_currentRecordingPath!);
+        if (await file.exists()) {
+          final fileSize = await file.length();
+          debugPrint('📦 Agregando al buffer: $_currentRecordingPath (${fileSize} bytes)');
+          _videoBuffer.add(_currentRecordingPath!);
+        } else {
+          debugPrint('❌ ERROR: El segmento no existe: $_currentRecordingPath');
+        }
+      }
+      
+      // Iniciar el siguiente segmento
+      await _startNewRecordingSegment();
+      
+    } catch (e) {
+      debugPrint('💥 Error al rotar segmento: $e');
+      // Intentar reiniciar grabación en caso de error
+      try {
+        await _startNewRecordingSegment();
+      } catch (restartError) {
+        debugPrint('💥 Error al reiniciar grabación: $restartError');
+      }
+    }
+  }
+  
+  /// Detiene la grabación continua
+  Future<void> _stopContinuousRecording() async {
+    if (!_isContinuousRecording) return;
+    
+    try {
+      _isContinuousRecording = false;
+      _recordingTimer?.cancel();
+      
+      // Detener grabación actual si está activa
+      if (cameraController != null) {
+        try {
+          await cameraController!.stopVideoRecording();
+        } catch (e) {
+          debugPrint('Error al detener grabación: $e');
+        }
+      }
+      
+      // Limpiar archivos del buffer
+      for (final filePath in _videoBuffer.toList()) {
+        if (filePath != null && await File(filePath).exists()) {
+          await File(filePath).delete();
+        }
+      }
+      _videoBuffer.clear();
+      
+      debugPrint('Grabación continua detenida');
+      
+    } catch (e) {
+      debugPrint('Error al detener grabación continua: $e');
+    }
+  }
+
+  /// Crea un clip de video combinando los segmentos del buffer para obtener ~10 segundos
+  Future<XFile?> _createClipFromBuffer() async {
+    if (_videoBuffer.isEmpty) {
+      debugPrint('⚠️ Buffer de video vacío, no se puede crear clip');
+      return null;
+    }
+    
+    try {
+      // Generar path para el clip final
+      final clipPath = await _sessionRepository.getNewVideoFilePath();
+      debugPrint('📹 Creando clip: $clipPath');
+      debugPrint('📦 Segmentos en buffer: ${_videoBuffer.length}');
+      
+      // Listar todos los segmentos disponibles
+      final availableSegments = <String>[];
+      for (final segmentPath in _videoBuffer.toList()) {
+        if (segmentPath != null && await File(segmentPath).exists()) {
+          final fileSize = await File(segmentPath).length();
+          debugPrint('✅ Segmento disponible: $segmentPath (${fileSize} bytes)');
+          availableSegments.add(segmentPath);
+        } else if (segmentPath != null) {
+          debugPrint('❌ Segmento faltante: $segmentPath');
+        }
+      }
+      
+      if (availableSegments.isEmpty) {
+        debugPrint('⚠️ No hay segmentos disponibles para crear clip');
+        return null;
+      }
+      
+      // Por ahora, usar el segmento más reciente como clip
+      // TODO: Implementar concatenación real de múltiples segmentos con FFmpeg
+      final mostRecentSegment = availableSegments.last;
+      debugPrint('🎬 Usando segmento más reciente: $mostRecentSegment');
+      
+      // Copiar el archivo al path del clip
+      await File(mostRecentSegment).copy(clipPath);
+      
+      // Verificar que el clip se creó correctamente
+      final clipFile = File(clipPath);
+      if (await clipFile.exists()) {
+        final clipSize = await clipFile.length();
+        debugPrint('✅ Clip creado exitosamente: $clipPath (${clipSize} bytes)');
+        return XFile(clipPath);
+      } else {
+        debugPrint('❌ Error: El clip no se pudo crear en $clipPath');
+        return null;
+      }
+      
+    } catch (e) {
+      debugPrint('💥 Error al crear clip desde buffer: $e');
+      return null;
+    }
   }
 
   static img.Image? _convertCameraImageToImage(CameraImage cameraImage) {
@@ -602,29 +817,23 @@ class CameraViewModel extends ChangeNotifier {
     
     // Enhanced thresholds for orange color detection (including darker shades)
     const hueMin = 0.0;      // Include reds
-    const hueMax = 0.2;      // Extend toward yellow-orange
-    const satMin = 0.2;      // Lower saturation for more opaque colors
-    const valMin = 0.15;     // Detect darker colors
+    const hueMax = 0.15;     // Reduce range to avoid yellows
+    const satMin = 0.30;     // Increase minimum saturation
+    const valMin = 0.20;     // Increase minimum value
     
     // Extended list of basketball-specific colors (RGB)
     final List<List<int>> basketballColors = [
-      [0xd4, 0x68, 0x50], // d46850
-      [0xa5, 0x53, 0x3c], // a5533c
-      [0x91, 0x41, 0x31], // 914131
-      [0xe7, 0x84, 0x6f], // e7846f
-      [0x7f, 0x3a, 0x2d], // 7f3a2d
-      [0x6b, 0x4c, 0x51], // 6b4c51
-      [0xff, 0xbe, 0xa7], // ffbea7
       [0xec, 0x74, 0x35], // ec7435 - typical orange
       [0xf8, 0x83, 0x27], // f88327 - bright orange
-      [0xf9, 0x98, 0x46], // f99846 - lighter orange
-      [0xbc, 0x53, 0x24], // bc5324 - dark orange-brown
       [0xd7, 0x64, 0x33], // d76433 - terracotta orange
       [0xcd, 0x5a, 0x0a], // cd5a0a - dull orange
+      [0xd4, 0x68, 0x50], // d46850
+      [0xa5, 0x53, 0x3c], // a5533c
+      [0x91, 0x41, 0x31], // 914131 - darker orange
     ];
     
-    // Tolerance for specific color comparison
-    const int colorTolerance = 40; // Increased for better flexibility in iOS
+    // Tolerance for specific color comparison (reduced)
+    const int colorTolerance = 30; // Reduced to avoid false positives
     
     // Create binary mask for orange pixels
     final orangeMask = List.generate(
@@ -632,10 +841,16 @@ class CameraViewModel extends ChangeNotifier {
       (_) => List.filled(width, false),
     );
     
+    // Create mask for all pixels (for circular detection)
+    final allPixelsMask = List.generate(
+      height, 
+      (_) => List.filled(width, true),
+    );
+    
     // Count of orange pixels
     int orangePixelCount = 0;
     
-    // Detect orange pixels
+    // Detect orange pixels - enhanced version for iOS
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
         final pixel = image.getPixelSafe(x, y);
@@ -658,11 +873,12 @@ class CameraViewModel extends ChangeNotifier {
           }
         }
         
-        // Additional check for opaque oranges directly
-        final bool isOpaqueOrange = (r > 90 && r < 240) && 
-                                   (g > 40 && g < 170) && 
-                                   (b < 120) &&
-                                   (r > g * 1.2) && (g > b * 1.1);
+        // Improved check for basketball orange with more constraints
+        final bool isOpaqueOrange = (r > 110 && r < 240) && 
+                                   (g > 50 && g < 160) && 
+                                   (b < 100) &&
+                                   (r > g * 1.3) && // Increased ratio constraint
+                                   (g > b * 1.3);   // Increased ratio constraint
         
         // Convert to HSV
         final hsv = _rgbToHsv(r, g, b);
@@ -670,10 +886,10 @@ class CameraViewModel extends ChangeNotifier {
         final s = hsv[1];
         final v = hsv[2];
         
-        // Combined condition to detect basketball colors
+        // Combined condition to detect basketball colors with stricter requirements
         if (isBasketballColor || 
-            (((h >= hueMin && h <= hueMax) || (h >= 0.94 && h <= 1.0)) && 
-            (s > satMin) && (v > valMin)) || 
+            (((h >= hueMin && h <= hueMax) || (h >= 0.95 && h <= 1.0)) && 
+            (s > satMin) && (v > valMin) && (r > g) && (g > b)) || 
             isOpaqueOrange) {
           orangeMask[y][x] = true;
           orangePixelCount++;
@@ -681,42 +897,141 @@ class CameraViewModel extends ChangeNotifier {
       }
     }
     
-    // If not enough orange pixels, no ball detected
-    if (orangePixelCount < 200) return null;
+    // Apply morphological operations to both masks
+    // For orange mask (color-based detection)
+    if (orangePixelCount >= 250) {
+      _applyDilation(orangeMask, 5);
+      _applyErosion(orangeMask, 4);
+    }
     
-    // Apply morphological operations (closing)
-    _applyDilation(orangeMask, 8);
-    _applyErosion(orangeMask, 5);
+    // For shape-based detection, use all pixels
+    _applyDilation(allPixelsMask, 3);
+    _applyErosion(allPixelsMask, 2);
     
-    // Find connected components and select the most circular one
-    final components = _findConnectedComponents(orangeMask);
+    // Find connected components for both masks
+    final orangeComponents = orangePixelCount >= 250 ? 
+        _findConnectedComponents(orangeMask) : [];
+    final allComponents = _findConnectedComponents(allPixelsMask);
     
-    BallDetection? bestBall;
-    double bestCircularity = 0;
+    // Store best candidates
+    BallDetection? bestColorBall;
+    BallDetection? bestShapeBall;
+    BallDetection? bestCombinedBall;
     
-    for (final component in components) {
-      if (component.pixels.length < 150) continue;  // Filter small objects
+    double bestColorCircularity = 0;
+    double bestShapeCircularity = 0;
+    double bestCombinedScore = 0;
+    
+    // Process color-based components (orange objects)
+    for (final component in orangeComponents) {
+      if (component.pixels.length < 200) continue;
       
-      // Calculate properties
       final properties = _calculateRegionProperties(component);
       final circularity = properties['circularity'] ?? 0;
       final radius = properties['radius'] ?? 0;
       final aspectRatio = properties['aspectRatio'] ?? 1.0;
       
-      // Filter by shape and size with adjusted thresholds for better precision
-      if (circularity > 0.65 && radius >= 10 && radius <= 300 &&
-          aspectRatio < 1.6 && aspectRatio > 0.6 &&
-          circularity > bestCircularity) {
-        bestCircularity = circularity;
-        bestBall = BallDetection(
-          center: properties['center'] ?? Offset.zero,
-          radius: radius,
-          confidence: circularity,
-        );
+      // Relaxed constraints for color-based detection
+      if (circularity > 0.65 && 
+          radius >= 15 && radius <= 250 &&
+          aspectRatio < 1.5 && aspectRatio > 0.65) {
+        
+        // If also has good circularity, consider it for combined detection
+        if (circularity > 0.75) {
+          final combinedScore = circularity * 2.0; // Double weight for combined
+          
+          if (combinedScore > bestCombinedScore) {
+            bestCombinedScore = combinedScore;
+            bestCombinedBall = BallDetection(
+              center: properties['center'] ?? Offset.zero,
+              radius: radius,
+              confidence: circularity,
+            );
+          }
+        }
+        
+        // Consider for color-only detection
+        if (circularity > bestColorCircularity) {
+          bestColorCircularity = circularity;
+          bestColorBall = BallDetection(
+            center: properties['center'] ?? Offset.zero,
+            radius: radius,
+            confidence: circularity,
+          );
+        }
       }
     }
     
-    return bestBall;
+    // Process shape-based components (circular objects)
+    for (final component in allComponents) {
+      if (component.pixels.length < 300 || component.pixels.length > 15000) continue;
+      
+      final properties = _calculateRegionProperties(component);
+      final circularity = properties['circularity'] ?? 0;
+      final radius = properties['radius'] ?? 0;
+      final aspectRatio = properties['aspectRatio'] ?? 1.0;
+      
+      // Stricter circularity constraints for shape-based detection
+      if (circularity > 0.85 && 
+          radius >= 20 && radius <= 200 &&
+          aspectRatio < 1.2 && aspectRatio > 0.8) {
+        
+        // Check if this component overlaps with an orange one
+        bool overlapsWithOrange = false;
+        final center = properties['center'] as Offset;
+        
+        for (final orangeComponent in orangeComponents) {
+          final orangeProperties = _calculateRegionProperties(orangeComponent);
+          final orangeCenter = orangeProperties['center'] as Offset;
+          final orangeRadius = orangeProperties['radius'] ?? 0;
+          
+          final dx = center.dx - orangeCenter.dx;
+          final dy = center.dy - orangeCenter.dy;
+          final distance = sqrt(dx * dx + dy * dy);
+          
+          if (distance < (radius + orangeRadius) * 0.7) {
+            overlapsWithOrange = true;
+            break;
+          }
+        }
+        
+        // If overlaps with orange component, prioritize as combined
+        if (overlapsWithOrange) {
+          final combinedScore = circularity * 1.5; // Higher weight
+          
+          if (combinedScore > bestCombinedScore) {
+            bestCombinedScore = combinedScore;
+            bestCombinedBall = BallDetection(
+              center: center,
+              radius: radius,
+              confidence: circularity,
+            );
+          }
+        }
+        
+        // Consider for shape-only detection
+        if (circularity > bestShapeCircularity) {
+          bestShapeCircularity = circularity;
+          bestShapeBall = BallDetection(
+            center: center,
+            radius: radius,
+            confidence: circularity * 0.9, // Slightly reduced confidence
+          );
+        }
+      }
+    }
+    
+    // Return the best detection based on priority:
+    // 1. Combined (color + shape)
+    // 2. Color-based
+    // 3. Shape-based
+    if (bestCombinedBall != null) {
+      return bestCombinedBall;
+    } else if (bestColorBall != null) {
+      return bestColorBall;
+    } else {
+      return bestShapeBall;
+    }
   }
   
   static List<double> _rgbToHsv(int r, int g, int b) {
@@ -955,14 +1270,41 @@ class CameraViewModel extends ChangeNotifier {
     // Desuscribirse de las actualizaciones del sensor
     _bluetoothViewModel.removeListener(_handleSensorUpdate);
     
-    // Detener la grabación si está activa
-    if (isRecordingVideo) {
-      _stopVideoRecording();
-    }
+    // Detener la grabación continua
+    _stopContinuousRecording();
     
     // Liberar recursos de la cámara
     cameraController?.dispose();
     super.dispose();
+  }
+
+  /// Método para testing - simula la detección de un tiro
+  Future<void> simulateShot(bool isSuccessful) async {
+    debugPrint('🧪 SIMULANDO TIRO: ${isSuccessful ? "ACIERTO" : "FALLO"}');
+    await _handleShotDetected(isSuccessful, ShotDetectionType.manual);
+  }
+  
+  /// Obtiene información de debug sobre el estado del buffer
+  String getBufferDebugInfo() {
+    final info = StringBuffer();
+    info.writeln('=== BUFFER DEBUG ===');
+    info.writeln('Grabación continua activa: $_isContinuousRecording');
+    info.writeln('Segmentos en buffer: ${_videoBuffer.length}');
+    info.writeln('Contador de segmentos: $_segmentCounter');
+    info.writeln('Path actual: $_currentRecordingPath');
+    info.writeln('');
+    
+    for (int i = 0; i < _videoBuffer.length; i++) {
+      final segment = _videoBuffer.toList()[i];
+      if (segment != null) {
+        final exists = File(segment).existsSync();
+        final size = exists ? File(segment).lengthSync() : 0;
+        info.writeln('Segmento #$i: ${exists ? "✅" : "❌"} ($size bytes)');
+        info.writeln('  $segment');
+      }
+    }
+    
+    return info.toString();
   }
 }
 

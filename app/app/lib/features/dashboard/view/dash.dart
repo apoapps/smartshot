@@ -9,8 +9,6 @@ class SmartShotHomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final viewModel = Provider.of<BluetoothViewModel>(context);
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final textColor = isDarkMode ? Colors.white : Colors.black;
 
     return Scaffold(
       backgroundColor: const Color(0xFF121212), // Fondo oscuro para el tema dark

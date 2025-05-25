@@ -27,14 +27,14 @@ void main() async {
           update: (context, repository, previous) => 
             previous ?? SessionViewModel(repository),
         ),
-        ChangeNotifierProxyProvider2<SessionRepository, BluetoothViewModel, CameraViewModel>(
+        ChangeNotifierProxyProvider3<SessionRepository, BluetoothViewModel, SessionViewModel, CameraViewModel>(
           create: (context) => CameraViewModel(
             context.read<SessionRepository>(), 
             context.read<BluetoothViewModel>(),
-            null, // Pasará null como sessionViewModel por ahora
+            context.read<SessionViewModel>(),
           ),
-          update: (context, repository, bluetoothViewModel, previous) => 
-            previous ?? CameraViewModel(repository, bluetoothViewModel),
+          update: (context, repository, bluetoothViewModel, sessionViewModel, previous) => 
+            previous ?? CameraViewModel(repository, bluetoothViewModel, sessionViewModel),
         ),
       ],
       child: const SmartShotApp(),

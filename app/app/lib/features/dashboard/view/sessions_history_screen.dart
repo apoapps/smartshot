@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../shared/sessions/view_model/session_view_model.dart';
 import '../../shared/sessions/data/session_model.dart';
+import '../../shared/sessions/view/video_player_view.dart';
 import 'package:intl/intl.dart';
+import 'dart:io';
 
 class SessionsHistoryScreen extends StatefulWidget {
   const SessionsHistoryScreen({super.key});
@@ -19,7 +21,10 @@ class _SessionsHistoryScreenState extends State<SessionsHistoryScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSessions();
+    // Diferir la carga de sesiones hasta después de que el widget termine de construirse
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSessions();
+    });
   }
 
   Future<void> _loadSessions() async {
@@ -290,6 +295,12 @@ class SessionDetailScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Detalles de sesión'),
         backgroundColor: const Color(0xFF1E1E1E),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline),
+            onPressed: () => _showVideoDebugInfo(context),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -426,36 +437,163 @@ class SessionDetailScreen extends StatelessWidget {
       itemCount: clips.length,
       itemBuilder: (context, index) {
         final clip = clips[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          color: const Color(0xFF1E1E1E),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: ListTile(
-            leading: Icon(
-              clip.isSuccessful ? Icons.check_circle : Icons.cancel,
-              color: clip.isSuccessful ? Colors.green : Colors.red,
-            ),
-            title: Text(
-              clip.isSuccessful ? 'Tiro acertado' : 'Tiro fallado',
-              style: const TextStyle(color: Colors.white),
-            ),
-            subtitle: Text(
-              DateFormat('HH:mm:ss').format(clip.timestamp),
-              style: const TextStyle(color: Colors.white70),
-            ),
-            trailing: Icon(
-              _getDetectionTypeIcon(clip.detectionType),
-              color: Colors.white70,
-              size: 18,
-            ),
-            onTap: () {
-              // Implementar visualización del clip
-            },
-          ),
+        return FutureBuilder<bool>(
+          future: _checkVideoExists(clip.videoPath),
+          builder: (context, snapshot) {
+            final videoExists = snapshot.data ?? false;
+            final isLoading = snapshot.connectionState == ConnectionState.waiting;
+            
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              color: const Color(0xFF1E1E1E),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: ListTile(
+                leading: Stack(
+                  children: [
+                    Icon(
+                      clip.isSuccessful ? Icons.check_circle : Icons.cancel,
+                      color: clip.isSuccessful ? Colors.green : Colors.red,
+                    ),
+                    if (isLoading)
+                      Positioned.fill(
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white.withOpacity(0.5),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                title: Row(
+                  children: [
+                    Text(
+                      clip.isSuccessful ? 'Tiro acertado' : 'Tiro fallado',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    const SizedBox(width: 8),
+                    if (!videoExists && !isLoading)
+                      const Icon(
+                        Icons.warning,
+                        color: Colors.orange,
+                        size: 16,
+                      ),
+                  ],
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      DateFormat('HH:mm:ss').format(clip.timestamp),
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                    if (clip.confidenceScore != null)
+                      Text(
+                        'Confianza: ${(clip.confidenceScore! * 100).toStringAsFixed(1)}%',
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
+                      ),
+                    if (!videoExists && !isLoading)
+                      const Text(
+                        'Video no disponible',
+                        style: TextStyle(
+                          color: Colors.orange,
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _getDetectionTypeIcon(clip.detectionType),
+                      color: Colors.white70,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      videoExists ? Icons.play_circle_filled : Icons.error_outline,
+                      color: videoExists ? Colors.blue : Colors.orange,
+                      size: 20,
+                    ),
+                  ],
+                ),
+                onTap: videoExists && !isLoading 
+                    ? () => _playVideo(context, clip.videoPath)
+                    : null,
+              ),
+            );
+          },
         );
       },
+    );
+  }
+  
+  Future<bool> _checkVideoExists(String videoPath) async {
+    try {
+      if (videoPath.isEmpty) return false;
+      final file = File(videoPath);
+      return await file.exists();
+    } catch (e) {
+      debugPrint('Error verificando archivo: $e');
+      return false;
+    }
+  }
+  
+  void _playVideo(BuildContext context, String videoPath) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => VideoPlayerView(videoPath: videoPath),
+        fullscreenDialog: true,
+      ),
+    );
+  }
+  
+  void _showVideoDebugInfo(BuildContext context) async {
+    final clips = session.shotClips;
+    final debugInfo = StringBuffer();
+    
+    debugInfo.writeln('=== DEBUG DE VIDEOS ===\n');
+    debugInfo.writeln('Total de clips: ${clips.length}\n');
+    
+    for (int i = 0; i < clips.length; i++) {
+      final clip = clips[i];
+      final exists = await _checkVideoExists(clip.videoPath);
+      
+      debugInfo.writeln('Clip #${i + 1}:');
+      debugInfo.writeln('  Resultado: ${clip.isSuccessful ? "Acierto" : "Fallo"}');
+      debugInfo.writeln('  Archivo: ${clip.videoPath}');
+      debugInfo.writeln('  Existe: ${exists ? "SÍ" : "NO"}');
+      debugInfo.writeln('  Detección: ${clip.detectionType}');
+      debugInfo.writeln('  Fecha: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(clip.timestamp)}');
+      if (clip.confidenceScore != null) {
+        debugInfo.writeln('  Confianza: ${(clip.confidenceScore! * 100).toStringAsFixed(1)}%');
+      }
+      debugInfo.writeln();
+    }
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Info de Debug'),
+        content: SingleChildScrollView(
+          child: Text(
+            debugInfo.toString(),
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
     );
   }
   
