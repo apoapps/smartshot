@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../shared/sessions/view_model/session_view_model.dart';
 import '../../shared/bluetooth/bluetooth_view_model.dart';
 import '../../camera/camera_view.dart';
+import '../../camera/camera_view_model.dart';
 import 'package:intl/intl.dart';
 import '../../shared/sessions/data/session_model.dart';
 
@@ -14,83 +15,28 @@ class SessionScreen extends StatefulWidget {
 }
 
 class _SessionScreenState extends State<SessionScreen> {
-  // Variables to track sensor data changes
-  int _initialArduinoShotCount = 0;
-  int _lastArduinoShotCount = 0;
-  int _sessionShotCount = 0;
-  
+  CameraViewModel? _cameraViewModel;
+
   @override
   void initState() {
     super.initState();
-    // Iniciar la sesión cuando se carga la pantalla
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final sessionViewModel = Provider.of<SessionViewModel>(context, listen: false);
-      final bluetoothViewModel = Provider.of<BluetoothViewModel>(context, listen: false);
       
-      // Save initial Arduino shot count as baseline
-      _initialArduinoShotCount = bluetoothViewModel.aciertos;
-      _lastArduinoShotCount = _initialArduinoShotCount;
+      // Crear e inicializar el camera view model
+      _cameraViewModel = CameraViewModel(sessionViewModel: sessionViewModel);
       
-      debugPrint('Session starting with initial Arduino shot count: $_initialArduinoShotCount');
-      
-      // Start session
+      // Iniciar la sesión
       sessionViewModel.startSession();
       
-      // Listen for Bluetooth updates
-      bluetoothViewModel.addListener(_handleBluetoothUpdates);
+      debugPrint('Sesión iniciada con nueva cámara simplificada');
     });
   }
-  
+
   @override
   void dispose() {
-    // Remove listener when widget is destroyed
-    Provider.of<BluetoothViewModel>(context, listen: false)
-        .removeListener(_handleBluetoothUpdates);
+    _cameraViewModel?.dispose();
     super.dispose();
-  }
-  
-  void _handleBluetoothUpdates() {
-    final bluetoothViewModel = Provider.of<BluetoothViewModel>(context, listen: false);
-    final sessionViewModel = Provider.of<SessionViewModel>(context, listen: false);
-    
-    // If session is not active, do nothing
-    if (!sessionViewModel.isSessionActive) return;
-    
-    // COMENTADO: Ya no necesitamos detectar tiros aquí porque CameraViewModel
-    // se encarga de detectar y registrar tiros con videos automáticamente
-    
-    // Only track changes in Arduino shot counter from JSON
-    // final currentArduinoShotCount = bluetoothViewModel.aciertos;
-    
-    // Only increase if the count actually increases
-    // if (currentArduinoShotCount > _lastArduinoShotCount) {
-    //   // Calculate how many new shots were detected
-    //   final newShotsCount = currentArduinoShotCount - _lastArduinoShotCount;
-    //   _lastArduinoShotCount = currentArduinoShotCount;
-    //   
-    //   // Register each new shot detected
-    //   for (int i = 0; i < newShotsCount; i++) {
-    //     _registerSuccessfulShot(sessionViewModel);
-    //   }
-    //   
-    //   debugPrint('Shot detected! Arduino count: $_lastArduinoShotCount (Session shots: $_sessionShotCount)');
-    // }
-  }
-  
-  void _registerSuccessfulShot(SessionViewModel sessionViewModel) {
-    // COMENTADO: Ya no necesario - CameraViewModel registra los tiros
-    // // Increment session shot counter
-    // _sessionShotCount++;
-    // 
-    // // Register the shot in the session view model
-    // sessionViewModel.registerShot(
-    //   isSuccessful: true,
-    //   videoPath: '', // Ideally get this from the camera
-    //   detectionType: ShotDetectionType.sensor,
-    //   confidenceScore: 1.0,
-    // );
-    // 
-    // debugPrint('Successful shot registered! Session shot count: $_sessionShotCount');
   }
 
   @override
@@ -103,12 +49,11 @@ class _SessionScreenState extends State<SessionScreen> {
             Image.asset(
               'assets/logo.png',
               height: 32,
-              errorBuilder:
-                  (context, error, stackTrace) => const Icon(
-                    Icons.sports_basketball,
-                    size: 32,
-                    color: Colors.white,
-                  ),
+              errorBuilder: (context, error, stackTrace) => const Icon(
+                Icons.sports_basketball,
+                size: 32,
+                color: Colors.white,
+              ),
             ),
             const SizedBox(width: 8),
             const Text('SmartShot', style: TextStyle(color: Colors.white)),
@@ -122,10 +67,9 @@ class _SessionScreenState extends State<SessionScreen> {
                   ),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
-                    color:
-                        viewModel.isConnected
-                            ? Colors.green.withOpacity(0.2)
-                            : Colors.red.withOpacity(0.2),
+                    color: viewModel.isConnected
+                        ? Colors.green.withOpacity(0.2)
+                        : Colors.red.withOpacity(0.2),
                     border: Border.all(
                       color: viewModel.isConnected ? Colors.green : Colors.red,
                     ),
@@ -194,158 +138,244 @@ class _SessionScreenState extends State<SessionScreen> {
   }
 
   Widget _buildActiveSession(SessionViewModel viewModel) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              const Text(
-                'Game in progress...',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _formatDuration(viewModel.elapsedSeconds),
-                style: const TextStyle(
-                  fontSize: 40,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _buildShotCounter(
-                    label: 'Successful',
-                    count: viewModel.successfulShots,
-                    color: Colors.green,
+    return SafeArea(
+      child: Stack(
+        children: [
+          // Fondo de cámara a pantalla completa
+          Positioned.fill(
+            child: _cameraViewModel != null
+                ? ChangeNotifierProvider<CameraViewModel>.value(
+                    value: _cameraViewModel!,
+                    child: const CameraView(
+                      isBackground: true,
+                      backgroundOpacity: 0.7, // 70% visible, 30% oscuro
+                    ),
+                  )
+                : Container(
+                    color: Colors.black,
                   ),
-                  const SizedBox(width: 24),
-                  _buildShotCounter(
-                    label: 'Missed',
-                    count: viewModel.missedShots,
-                    color: Colors.red,
+          ),
+          
+          // Contenido principal
+          Positioned.fill(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  // Header con información de la sesión
+                  Container(
+                    margin: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.all(20.0),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.8),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.orange.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'Sesión en progreso...',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _formatDuration(viewModel.elapsedSeconds),
+                          style: const TextStyle(
+                            fontSize: 40,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _buildShotCounter(
+                              label: 'Exitosos',
+                              count: viewModel.successfulShots,
+                              color: Colors.green,
+                            ),
+                            const SizedBox(width: 24),
+                            _buildShotCounter(
+                              label: 'Fallados',
+                              count: viewModel.missedShots,
+                              color: Colors.red,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Espacio flexible para empujar los botones hacia abajo
+                  SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.4,
+                  ),
+
+                  // Botones de control en la parte inferior
+                  Container(
+                    margin: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.all(16.0),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.8),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.orange.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () => viewModel.endSession(),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orange.shade800,
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(double.infinity, 50),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Text('Finalizar'),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => viewModel.pauseSession(),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: Colors.white),
+                              minimumSize: const Size(double.infinity, 50),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Text('Pausar'),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
-
-        const SizedBox(
-          width: double.infinity,
-          height: 400,
-          child: Positioned(left: 0, right: 0, child: CameraView()),
-        ),
-
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () => viewModel.endSession(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange.shade800,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(double.infinity, 50),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text('Finish'),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => viewModel.pauseSession(),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white),
-                    minimumSize: const Size(double.infinity, 50),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text('Pause'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildPausedSession(SessionViewModel viewModel) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+    return SafeArea(
+      child: Stack(
         children: [
-          const Text(
-            'Paused...',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
+          // Fondo de cámara a pantalla completa
+          Positioned.fill(
+            child: _cameraViewModel != null
+                ? ChangeNotifierProvider<CameraViewModel>.value(
+                    value: _cameraViewModel!,
+                    child: const CameraView(
+                      isBackground: true,
+                      backgroundOpacity: 0.5, // Más oscuro cuando está pausado
+                    ),
+                  )
+                : Container(
+                    color: Colors.black,
+                  ),
           ),
-          const SizedBox(height: 16),
-          Text(
-            _formatDuration(viewModel.elapsedSeconds),
-            style: const TextStyle(
-              fontSize: 48,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildShotCounter(
-                label: 'Successful',
-                count: viewModel.successfulShots,
-                color: Colors.green,
+          
+          // Contenido principal
+          Positioned.fill(
+            child: Center(
+              child: Container(
+                margin: const EdgeInsets.all(32.0),
+                padding: const EdgeInsets.all(32.0),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.orange.withOpacity(0.5),
+                    width: 2,
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.pause_circle_outline,
+                      size: 64,
+                      color: Colors.orange,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Sesión Pausada',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _formatDuration(viewModel.elapsedSeconds),
+                      style: const TextStyle(
+                        fontSize: 48,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildShotCounter(
+                          label: 'Exitosos',
+                          count: viewModel.successfulShots,
+                          color: Colors.green,
+                        ),
+                        const SizedBox(width: 24),
+                        _buildShotCounter(
+                          label: 'Fallados',
+                          count: viewModel.missedShots,
+                          color: Colors.red,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 32),
+                    ElevatedButton.icon(
+                      onPressed: () => viewModel.resumeSession(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('Reanudar'),
+                    ),
+                    const SizedBox(height: 16),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                      },
+                      child: const Text(
+                        'Cancelar',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(width: 24),
-              _buildShotCounter(
-                label: 'Missed',
-                count: viewModel.missedShots,
-                color: Colors.red,
-              ),
-            ],
-          ),
-          const SizedBox(height: 32),
-          ElevatedButton.icon(
-            onPressed: () => viewModel.resumeSession(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Resume'),
-          ),
-          const SizedBox(height: 16),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-            },
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: Colors.white70),
             ),
           ),
         ],

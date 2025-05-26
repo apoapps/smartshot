@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 import 'dart:ui';
 import 'dart:math' show atan2, pi;
+import 'dart:isolate';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:google_ml_kit/google_ml_kit.dart';
 import 'package:camera/camera.dart';
@@ -105,6 +107,8 @@ class PoseDetectionService {
   /// Inicializar ambos detectores
   Future<bool> initialize() async {
     try {
+      debugPrint('🔄 Inicializando ML Kit en plataforma: ${Platform.operatingSystem}');
+      
       // Configurar detector de poses
       final poseOptions = PoseDetectorOptions(
         model: PoseDetectionModel.accurate,
@@ -121,7 +125,9 @@ class PoseDetectionService {
       _objectDetector = ObjectDetector(options: objectOptions);
 
       _isInitialized = true;
-      debugPrint('✅ ML Kit Basketball Detection inicializado');
+      debugPrint('✅ ML Kit Basketball Detection inicializado en ${Platform.operatingSystem}');
+      debugPrint('📱 Pose Detector: ${_poseDetector != null}');
+      debugPrint('⚽ Object Detector: ${_objectDetector != null}');
       return true;
     } catch (e) {
       debugPrint('❌ Error inicializando Basketball Detection: $e');
@@ -135,26 +141,56 @@ class PoseDetectionService {
   /// Análisis completo de basketball en tiempo real
   Future<BasketballAnalysis?> analyzeBasketballFrame(CameraImage cameraImage) async {
     if (!_isInitialized || _poseDetector == null || _objectDetector == null) {
+      debugPrint('❌ ML Kit no inicializado correctamente');
       return null;
     }
 
     try {
+      debugPrint('🔍 Procesando frame ${cameraImage.width}x${cameraImage.height} formato: ${cameraImage.format.group}');
+      
+      return await compute(_processFrameInIsolate, {
+        'cameraImage': cameraImage,
+        'ballPositionHistory': _ballPositionHistory,
+        'lastBallPosition': _lastBallPosition,
+        'lastBallDetectionTime': _lastBallDetectionTime,
+      });
+    } catch (e) {
+      debugPrint('❌ Error en análisis de basketball: $e');
+      return null;
+    }
+  }
+
+  static Future<BasketballAnalysis?> _processFrameInIsolate(Map<String, dynamic> params) async {
+    final cameraImage = params['cameraImage'] as CameraImage;
+    
+    try {
       final inputImage = _convertCameraImage(cameraImage);
       if (inputImage == null) return null;
 
-      // Ejecutar ambas detecciones en paralelo
+      final poseDetector = PoseDetector(options: PoseDetectorOptions(
+        model: PoseDetectionModel.accurate,
+        mode: PoseDetectionMode.stream,
+      ));
+
+      final objectDetector = ObjectDetector(options: ObjectDetectorOptions(
+        mode: DetectionMode.stream,
+        classifyObjects: true,
+        multipleObjects: true,
+      ));
+
       final results = await Future.wait([
-        _detectPose(inputImage),
-        _detectBall(inputImage),
+        _detectPose(inputImage, poseDetector),
+        _detectBall(inputImage, objectDetector, params),
       ]);
+
+      await poseDetector.close();
+      await objectDetector.close();
 
       final poseAnalysis = results[0] as BasketballPoseAnalysis?;
       final ballDetection = results[1] as BallDetectionResult;
 
-      // Analizar si hay intento de tiro
       final shotAttemptDetected = _analyzeShotAttempt(poseAnalysis, ballDetection);
       final ballReleasedFromHands = _analyzeBallRelease(poseAnalysis, ballDetection);
-
       final overallConfidence = _calculateOverallConfidence(poseAnalysis, ballDetection);
 
       return BasketballAnalysis(
@@ -164,23 +200,27 @@ class PoseDetectionService {
         ballReleasedFromHands: ballReleasedFromHands,
         overallConfidence: overallConfidence,
       );
-
     } catch (e) {
-      debugPrint('❌ Error en análisis de basketball: $e');
+      debugPrint('❌ Error en isolate: $e');
       return null;
     }
   }
 
   /// Detectar poses
-  Future<BasketballPoseAnalysis?> _detectPose(InputImage inputImage) async {
+  static Future<BasketballPoseAnalysis?> _detectPose(InputImage inputImage, PoseDetector poseDetector) async {
     try {
-      final poses = await _poseDetector!.processImage(inputImage);
+      debugPrint('🕺 Iniciando detección de poses...');
+      final poses = await poseDetector.processImage(inputImage);
+      
+      debugPrint('📊 Poses detectadas: ${poses.length}');
       
       if (poses.isEmpty) {
+        debugPrint('❌ No se detectaron poses');
         return null;
       }
 
       final pose = poses.first;
+      debugPrint('✅ Pose detectada con ${pose.landmarks.length} landmarks');
       return _analyzeBasketballPose(pose);
     } catch (e) {
       debugPrint('❌ Error en detección de poses: $e');
@@ -189,21 +229,28 @@ class PoseDetectionService {
   }
 
   /// Detectar pelota usando detección de objetos
-  Future<BallDetectionResult> _detectBall(InputImage inputImage) async {
+  static Future<BallDetectionResult> _detectBall(InputImage inputImage, ObjectDetector objectDetector, Map<String, dynamic> params) async {
     try {
-      final objects = await _objectDetector!.processImage(inputImage);
+      debugPrint('⚽ Iniciando detección de objetos...');
+      final objects = await objectDetector.processImage(inputImage);
+      
+      debugPrint('📦 Objetos detectados: ${objects.length}');
       
       // Buscar objetos que podrían ser una pelota deportiva
       for (final detectedObject in objects) {
+        debugPrint('🔍 Objeto detectado con ${detectedObject.labels.length} etiquetas');
         for (final label in detectedObject.labels) {
+          debugPrint('🏷️ Etiqueta: ${label.text} (confianza: ${label.confidence})');
           if (_isSportsObject(label.text)) {
-            return _createBallDetectionResult(detectedObject, label.confidence);
+            debugPrint('🏀 ¡Pelota deportiva encontrada!');
+            return _createBallDetectionResult(detectedObject, label.confidence, params);
           }
         }
       }
 
       // Si no encuentra objetos clasificados, usar detección de forma circular
-      return _detectBallByShape(objects);
+      debugPrint('🔄 Intentando detección por forma...');
+      return _detectBallByShape(objects, params);
       
     } catch (e) {
       debugPrint('❌ Error en detección de pelota: $e');
@@ -216,41 +263,36 @@ class PoseDetectionService {
   }
 
   /// Verificar si el objeto detectado es deportivo
-  bool _isSportsObject(String label) {
+  static bool _isSportsObject(String label) {
     final sportsLabels = ['sports ball', 'ball', 'basketball', 'sphere'];
     return sportsLabels.any((sports) => 
       label.toLowerCase().contains(sports.toLowerCase()));
   }
 
   /// Crear resultado de detección de pelota
-  BallDetectionResult _createBallDetectionResult(DetectedObject object, double confidence) {
+  static BallDetectionResult _createBallDetectionResult(DetectedObject object, double confidence, Map<String, dynamic> params) {
     final rect = object.boundingBox;
     final center = Offset(
       rect.left + rect.width / 2,
       rect.top + rect.height / 2,
     );
     
-    // Calcular velocidad basada en posición anterior
+    final ballPositionHistory = params['ballPositionHistory'] as List<Offset>;
+    final lastBallPosition = params['lastBallPosition'] as Offset?;
+    final lastBallDetectionTime = params['lastBallDetectionTime'] as DateTime?;
+    
     Offset? velocity;
     bool ballInMotion = false;
     
-    if (_lastBallPosition != null && _lastBallDetectionTime != null) {
-      final timeDiff = DateTime.now().difference(_lastBallDetectionTime!).inMilliseconds;
+    if (lastBallPosition != null && lastBallDetectionTime != null) {
+      final timeDiff = DateTime.now().difference(lastBallDetectionTime).inMilliseconds;
       if (timeDiff > 0) {
-        final dx = center.dx - _lastBallPosition!.dx;
-        final dy = center.dy - _lastBallPosition!.dy;
+        final dx = center.dx - lastBallPosition.dx;
+        final dy = center.dy - lastBallPosition.dy;
         velocity = Offset(dx / timeDiff * 1000, dy / timeDiff * 1000);
-        ballInMotion = velocity.distance > 10; // Umbral de movimiento
+        ballInMotion = velocity.distance > 10;
       }
     }
-
-    // Actualizar historial
-    _ballPositionHistory.add(center);
-    if (_ballPositionHistory.length > 10) {
-      _ballPositionHistory.removeAt(0);
-    }
-    _lastBallPosition = center;
-    _lastBallDetectionTime = DateTime.now();
 
     return BallDetectionResult(
       ballDetected: true,
@@ -263,14 +305,14 @@ class PoseDetectionService {
   }
 
   /// Detectar pelota por forma cuando no hay clasificación
-  BallDetectionResult _detectBallByShape(List<DetectedObject> objects) {
+  static BallDetectionResult _detectBallByShape(List<DetectedObject> objects, Map<String, dynamic> params) {
     for (final object in objects) {
       final rect = object.boundingBox;
       final aspectRatio = rect.width / rect.height;
       
       // Buscar objetos aproximadamente circulares
       if (aspectRatio > 0.7 && aspectRatio < 1.3) {
-        return _createBallDetectionResult(object, 0.6); // Confianza media
+        return _createBallDetectionResult(object, 0.6, params);
       }
     }
 
@@ -282,7 +324,7 @@ class PoseDetectionService {
   }
 
   /// Analizar pose específicamente para basketball
-  BasketballPoseAnalysis _analyzeBasketballPose(Pose pose) {
+  static BasketballPoseAnalysis _analyzeBasketballPose(Pose pose) {
     final landmarks = pose.landmarks;
     
     // Puntos clave para análisis de tiro
@@ -356,7 +398,7 @@ class PoseDetectionService {
   }
 
   /// Detectar si es una pose de tiro
-  bool _isShootingPose(
+  static bool _isShootingPose(
     PoseLandmark? rightElbow,
     PoseLandmark? rightWrist,
     PoseLandmark? leftElbow,
@@ -374,7 +416,7 @@ class PoseDetectionService {
   }
 
   /// Calcular punto de liberación de la pelota
-  Offset? _calculateBallReleasePoint(
+  static Offset? _calculateBallReleasePoint(
     PoseLandmark? rightWrist,
     PoseLandmark? leftWrist,
   ) {
@@ -392,7 +434,7 @@ class PoseDetectionService {
   }
 
   /// Analizar si hay intento de tiro
-  bool _analyzeShotAttempt(
+  static bool _analyzeShotAttempt(
     BasketballPoseAnalysis? poseAnalysis,
     BallDetectionResult ballDetection,
   ) {
@@ -404,7 +446,7 @@ class PoseDetectionService {
   }
 
   /// Analizar si la pelota se liberó de las manos
-  bool _analyzeBallRelease(
+  static bool _analyzeBallRelease(
     BasketballPoseAnalysis? poseAnalysis,
     BallDetectionResult ballDetection,
   ) {
@@ -426,7 +468,7 @@ class PoseDetectionService {
   }
 
   /// Calcular confianza general
-  double _calculateOverallConfidence(
+  static double _calculateOverallConfidence(
     BasketballPoseAnalysis? poseAnalysis,
     BallDetectionResult ballDetection,
   ) {
@@ -437,7 +479,7 @@ class PoseDetectionService {
   }
 
   /// Calcular ángulo entre tres puntos
-  double _calculateAngle(double x1, double y1, double x2, double y2, double x3, double y3) {
+  static double _calculateAngle(double x1, double y1, double x2, double y2, double x3, double y3) {
     final double angle1 = atan2(y1 - y2, x1 - x2);
     final double angle2 = atan2(y3 - y2, x3 - x2);
     double angle = (angle2 - angle1).abs();
@@ -450,7 +492,7 @@ class PoseDetectionService {
   }
 
   /// Detectar fase del tiro
-  ShootingPhase _detectShootingPhase(
+  static ShootingPhase _detectShootingPhase(
     PoseLandmark? rightWrist,
     PoseLandmark? leftWrist,
     PoseLandmark? rightElbow,
@@ -476,7 +518,7 @@ class PoseDetectionService {
   }
 
   /// Evaluar forma del tiro
-  FormEvaluation _evaluateShootingForm(
+  static FormEvaluation _evaluateShootingForm(
     double rightElbowAngle,
     double leftElbowAngle,
     double kneeFlexion,
@@ -516,8 +558,10 @@ class PoseDetectionService {
   }
 
   /// Convertir CameraImage a InputImage
-  InputImage? _convertCameraImage(CameraImage cameraImage) {
+  static InputImage? _convertCameraImage(CameraImage cameraImage) {
     try {
+      debugPrint('🖼️ Convirtiendo imagen: ${cameraImage.width}x${cameraImage.height}, formato: ${cameraImage.format.group}, planes: ${cameraImage.planes.length}');
+      
       final WriteBuffer allBytes = WriteBuffer();
       for (final Plane plane in cameraImage.planes) {
         allBytes.putUint8List(plane.bytes);
@@ -530,7 +574,13 @@ class PoseDetectionService {
       );
 
       const InputImageRotation imageRotation = InputImageRotation.rotation0deg;
-      const InputImageFormat inputImageFormat = InputImageFormat.nv21;
+      
+      // Usar formato correcto según la plataforma
+      final InputImageFormat inputImageFormat = Platform.isIOS 
+          ? InputImageFormat.bgra8888 
+          : InputImageFormat.nv21;
+
+      debugPrint('🔧 Formato ML Kit: $inputImageFormat, plataforma: ${Platform.operatingSystem}');
 
       final inputImageData = InputImageMetadata(
         size: imageSize,
@@ -539,10 +589,13 @@ class PoseDetectionService {
         bytesPerRow: cameraImage.planes[0].bytesPerRow,
       );
 
-      return InputImage.fromBytes(
+      final inputImage = InputImage.fromBytes(
         bytes: bytes,
         metadata: inputImageData,
       );
+      
+      debugPrint('✅ InputImage creada exitosamente');
+      return inputImage;
     } catch (e) {
       debugPrint('❌ Error convirtiendo imagen: $e');
       return null;

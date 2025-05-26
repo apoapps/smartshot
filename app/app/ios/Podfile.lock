@@ -397,6 +397,6 @@ SPEC CHECKSUMS:
   SSZipArchive: 8a6ee5677c8e304bebc109e39cf0da91ccef22ea
   video_player_avfoundation: 2cef49524dd1f16c5300b9cd6efd9611ce03639b
 
-PODFILE CHECKSUM: 1b2cd1b14cd159bbeb4e8d4483b4afed2eb6a023
+PODFILE CHECKSUM: 333efbbf12de0e18efdf9c969a9ab5d335232de6
 
 COCOAPODS: 1.16.2

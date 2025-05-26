@@ -7,6 +7,7 @@ import 'features/camera/camera_view_model.dart';
 import 'features/dashboard/view/dashboard_view.dart';
 import 'features/shared/sessions/data/session_repository.dart';
 import 'features/shared/sessions/view_model/session_view_model.dart';
+import 'features/shared/watch/watch_view_model.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,15 +30,9 @@ void main() async {
           update: (context, sessionRepository, previous) => 
               previous ?? SessionViewModel(sessionRepository),
         ),
-        ChangeNotifierProxyProvider3<SessionRepository, BluetoothViewModel, SessionViewModel, CameraViewModel>(
-          create: (context) => CameraViewModel(
-            Provider.of<SessionRepository>(context, listen: false),
-            Provider.of<BluetoothViewModel>(context, listen: false),
-            Provider.of<SessionViewModel>(context, listen: false),
-          ),
-          update: (context, sessionRepository, bluetoothViewModel, sessionViewModel, previous) => 
-              previous ?? CameraViewModel(sessionRepository, bluetoothViewModel, sessionViewModel),
-        ),
+        ChangeNotifierProvider(create: (context) => WatchViewModel()),
+        // Simplificado: CameraViewModel ya no necesita múltiples dependencias
+        // Se creará localmente en SessionScreen con referencia a SessionViewModel
       ],
       child: const SmartShotApp(),
     ),

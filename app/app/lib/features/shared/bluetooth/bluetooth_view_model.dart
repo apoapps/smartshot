@@ -155,11 +155,11 @@ class BluetoothViewModel extends ChangeNotifier {
       _isConnected = _characteristic != null;
 
       if (!_isConnected) {
-        print('Característica BLE no encontrada');
+      //  print('Característica BLE no encontrada');
         await disconnect();
       }
     } catch (e) {
-      print('Error al conectar: $e');
+  //    print('Error al conectar: $e');
       await disconnect();
     } finally {
       _isConnecting = false;
@@ -231,11 +231,11 @@ class BluetoothViewModel extends ChangeNotifier {
   void _handleResponse(List<int> value) {
     try {
       // Debug: mostrar los bytes recibidos
-      print('Bytes recibidos: ${value.toString()}');
+     // print('Bytes recibidos: ${value.toString()}');
       
       // Intenta decodificar sólo si hay bytes suficientes
       if (value.isEmpty) {
-        print('Se recibió una lista vacía de bytes');
+     //   print('Se recibió una lista vacía de bytes');
         return;
       }
       
@@ -248,7 +248,7 @@ class BluetoothViewModel extends ChangeNotifier {
           final byteData = ByteData.view(buffer);
           final valorFloat = byteData.getFloat32(0, Endian.little);
           
-          print('Interpretando como float: $valorFloat');
+      //    print('Interpretando como float: $valorFloat');
           
           // Actualizar la distancia si parece un valor válido
           if (valorFloat >= 0 && valorFloat < 1000) {
@@ -265,16 +265,16 @@ class BluetoothViewModel extends ChangeNotifier {
       String response;
       try {
         response = utf8.decode(value);
-        print('Texto recibido: $response');
+    //    print('Texto recibido: $response');
       } catch (e) {
-        print('Error al decodificar UTF-8: $e');
+      print('Error al decodificar UTF-8: $e');
         print('Bytes individuales: ${value.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}');
         return;
       }
       
       // Verificar que el texto tenga formato de JSON
       if (!response.startsWith('{') || !response.endsWith('}')) {
-        print('Formato no válido de JSON: $response');
+  //      print('Formato no válido de JSON: $response');
         return;
       }
       
@@ -282,7 +282,7 @@ class BluetoothViewModel extends ChangeNotifier {
       Map<String, dynamic> data;
       try {
         data = jsonDecode(response);
-        print('JSON decodificado: $data');
+  //      print('JSON decodificado: $data');
       } catch (e) {
         print('Error al decodificar JSON: $e');
         return;
