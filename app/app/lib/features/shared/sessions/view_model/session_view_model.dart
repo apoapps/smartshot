@@ -187,6 +187,34 @@ class SessionViewModel extends ChangeNotifier {
     }
   }
   
+  /// Agrega un resultado de tiro (método de compatibilidad)
+  Future<void> addShotResult(bool isSuccessful, double confidence) async {
+    if (!_isSessionActive) {
+      debugPrint('⚠️ No hay sesión activa para registrar el tiro');
+      return;
+    }
+    
+    try {
+      // Crear un clip temporal sin video (para compatibilidad)
+      final shot = ShotClip(
+        timestamp: DateTime.now(),
+        isSuccessful: isSuccessful,
+        videoPath: '', // Sin video por ahora
+        confidenceScore: confidence,
+        detectionType: ShotDetectionType.camera, // Por defecto
+      );
+      
+      _pendingShots.add(shot);
+      
+      debugPrint('🏀 Tiro registrado: ${isSuccessful ? "ACIERTO" : "FALLO"} - Confianza: ${(confidence * 100).toStringAsFixed(1)}%');
+      
+      notifyListeners();
+      
+    } catch (e) {
+      debugPrint('❌ Error al agregar resultado de tiro: $e');
+    }
+  }
+  
   /// Registra un tiro en la sesión activa
   Future<void> registerShot({
     required bool isSuccessful,

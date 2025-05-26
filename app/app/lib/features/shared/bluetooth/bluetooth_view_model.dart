@@ -42,16 +42,45 @@ class BluetoothViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Verificar estado del Bluetooth antes de escanear
+      final bluetoothState = await FlutterBluePlus.adapterState.first;
+      debugPrint('🔵 Estado del Bluetooth: $bluetoothState');
+      
+      if (bluetoothState != BluetoothAdapterState.on) {
+        debugPrint('❌ Bluetooth no está encendido. Estado: $bluetoothState');
+        _isConnecting = false;
+        notifyListeners();
+        return;
+      }
+      
+      debugPrint('🔍 Iniciando escaneo de dispositivos...');
+      
+      // Verificar si ya estamos escaneando
+      if (await FlutterBluePlus.isScanning.first) {
+        debugPrint('⚠️ Ya se está ejecutando un escaneo - deteniéndolo');
+        await FlutterBluePlus.stopScan();
+        await Future.delayed(Duration(milliseconds: 500));
+      }
+      
       // Iniciar el escaneo
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
+      await FlutterBluePlus.startScan(
+        timeout: const Duration(seconds: 10),
+      );
 
       // Escuchar los resultados del escaneo
+      bool deviceFound = false;
       await for (final result in FlutterBluePlus.scanResults) {
         for (ScanResult r in result) {
-          // Busca un dispositivo con ESP32 en el nombre
-          if (r.device.advName.toLowerCase().contains('esp32')) {
+          debugPrint('📱 Dispositivo encontrado: ${r.device.advName} (${r.device.remoteId})');
+          
+          // Busca un dispositivo con ESP32 en el nombre o con el UUID esperado
+          if (r.device.advName.toLowerCase().contains('esp32') || 
+              r.device.advName.toLowerCase().contains('smartshot')) {
+            debugPrint('✅ Dispositivo SmartShot encontrado: ${r.device.advName}');
+            
             await FlutterBluePlus.stopScan();
-
+            deviceFound = true;
+            
             // Conectarse al dispositivo
             await _connectToDevice(r.device);
             return;
@@ -60,10 +89,30 @@ class BluetoothViewModel extends ChangeNotifier {
       }
 
       // Si llegamos aquí, no se encontró el dispositivo
+      if (!deviceFound) {
+        debugPrint('❌ No se encontró el dispositivo SmartShot');
+      }
+      
       _isConnecting = false;
       notifyListeners();
     } catch (e) {
-      print('Error al escanear/conectar: $e');
+      debugPrint('❌ Error al escanear/conectar: $e');
+      
+      // Manejar diferentes tipos de errores
+      if (e.toString().contains('bluetooth must be turned on')) {
+        debugPrint('💡 Sugerencia: Habilita Bluetooth en Configuración');
+      } else if (e.toString().contains('CBManagerStateUnknown')) {
+        debugPrint('💡 Esperando inicialización del Bluetooth...');
+        // Intentar de nuevo después de un delay
+        await Future.delayed(Duration(seconds: 2));
+        if (await FlutterBluePlus.adapterState.first == BluetoothAdapterState.on) {
+          debugPrint('🔄 Bluetooth ya disponible, reintentando...');
+          _isConnecting = false;
+          scanAndConnect(); // Reintentar una vez
+          return;
+        }
+      }
+      
       _isConnecting = false;
       notifyListeners();
     }

@@ -37,7 +37,6 @@ dependencies:
   flutter_blue_plus: ^1.35.5
   camera: ^0.11.1
   provider: ^6.1.5
-  tflite_flutter: ^0.11.0
   image: ^4.1.6
   hive: ^2.2.3
   hive_flutter: ^1.1.0
@@ -47,6 +46,10 @@ dependencies:
   circular_buffer: ^0.11.0
   path: ^1.8.3
   uuid: ^4.3.3
+  http: ^1.1.0
+  
+  # Google ML Kit unificado para detección en tiempo real
+  google_ml_kit: ^0.20.0
 
 dev_dependencies:
   flutter_test:
