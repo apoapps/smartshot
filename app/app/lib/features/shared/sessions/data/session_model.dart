@@ -78,5 +78,8 @@ enum ShotDetectionType {
   camera,
   
   @HiveField(2)
-  manual
+  manual,
+  
+  @HiveField(3)
+  watch
 } 

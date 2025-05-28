@@ -241,6 +241,8 @@ PODS:
   - video_player_avfoundation (0.0.1):
     - Flutter
     - FlutterMacOS
+  - watch_connectivity (0.0.1):
+    - Flutter
 
 DEPENDENCIES:
   - camera_avfoundation (from `.symlinks/plugins/camera_avfoundation/ios`)
@@ -262,6 +264,7 @@ DEPENDENCIES:
   - google_mlkit_translation (from `.symlinks/plugins/google_mlkit_translation/ios`)
   - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
   - video_player_avfoundation (from `.symlinks/plugins/video_player_avfoundation/darwin`)
+  - watch_connectivity (from `.symlinks/plugins/watch_connectivity/ios`)
 
 SPEC REPOS:
   trunk:
@@ -340,6 +343,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/path_provider_foundation/darwin"
   video_player_avfoundation:
     :path: ".symlinks/plugins/video_player_avfoundation/darwin"
+  watch_connectivity:
+    :path: ".symlinks/plugins/watch_connectivity/ios"
 
 SPEC CHECKSUMS:
   camera_avfoundation: be3be85408cd4126f250386828e9b1dfa40ab436
@@ -396,7 +401,8 @@ SPEC CHECKSUMS:
   PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
   SSZipArchive: 8a6ee5677c8e304bebc109e39cf0da91ccef22ea
   video_player_avfoundation: 2cef49524dd1f16c5300b9cd6efd9611ce03639b
+  watch_connectivity: 88e5bea25b473e66ef8d3f960954d154ed0356d6
 
-PODFILE CHECKSUM: 333efbbf12de0e18efdf9c969a9ab5d335232de6
+PODFILE CHECKSUM: a901b0534ebff1a81cfb53fbf723b1bca433de9f
 
 COCOAPODS: 1.16.2

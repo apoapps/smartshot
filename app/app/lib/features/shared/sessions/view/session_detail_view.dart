@@ -405,6 +405,11 @@ class _ShotClipCard extends StatelessWidget {
         label = 'Manual';
         icon = Icons.touch_app;
         break;
+      case ShotDetectionType.watch:
+        chipColor = Colors.amber;
+        label = 'Apple Watch';
+        icon = Icons.watch;
+        break;
     }
 
     return Container(

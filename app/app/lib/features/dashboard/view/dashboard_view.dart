@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../shared/bluetooth/bluetooth_view_model.dart';
-import '../../camera/camera_view.dart';
+import '../../shared/connectivity/connectivity_service.dart';
+import '../../shared/connectivity/connectivity_status_widget.dart';
 import 'session_screen.dart';
 import 'sessions_history_screen.dart';
 
@@ -29,7 +30,8 @@ class _SmartShotHomePageState extends State<SmartShotHomePage> with TickerProvid
 
   @override
   Widget build(BuildContext context) {
-    final viewModel = Provider.of<BluetoothViewModel>(context);
+    final bluetoothViewModel = Provider.of<BluetoothViewModel>(context);
+    final connectivityService = Provider.of<ConnectivityService>(context);
 
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
@@ -52,22 +54,9 @@ class _SmartShotHomePageState extends State<SmartShotHomePage> with TickerProvid
               ),
             ),
             const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                color: viewModel.isConnected ? Colors.green.withOpacity(0.2) : Colors.red.withOpacity(0.2),
-                border: Border.all(
-                  color: viewModel.isConnected ? Colors.green : Colors.red,
-                ),
-              ),
-              child: Text(
-                viewModel.isConnected ? 'Conectado' : 'Desconectado',
-                style: TextStyle(
-                  color: viewModel.isConnected ? Colors.green : Colors.red,
-                  fontSize: 12,
-                ),
-              ),
+            const ConnectivityStatusWidget(
+              isCompact: true,
+              showLabels: false,
             ),
           ],
         ),
@@ -84,26 +73,26 @@ class _SmartShotHomePageState extends State<SmartShotHomePage> with TickerProvid
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildHomeTab(viewModel),
+          _buildHomeTab(bluetoothViewModel, connectivityService),
           const SessionsHistoryScreen(),
         ],
       ),
     );
   }
   
-  Widget _buildHomeTab(BluetoothViewModel viewModel) {
+  Widget _buildHomeTab(BluetoothViewModel bluetoothViewModel, ConnectivityService connectivityService) {
     // Estado 1: Buscando (loading)
-    if (viewModel.isConnecting) {
+    if (bluetoothViewModel.isConnecting) {
       return _buildSearchingState();
     }
     
-    // Estado 2: Desconectado
-    if (!viewModel.isConnected) {
-      return _buildDisconnectedState(context);
+    // Verificar si se puede iniciar una sesión basado en el estado de conectividad
+    if (!connectivityService.canStartSession()) {
+      return _buildDisconnectedState(context, connectivityService);
     }
     
     // Estado 3: Conectado (muestra el dashboard)
-    return _buildDashboard(viewModel, context);
+    return _buildDashboard(bluetoothViewModel, connectivityService, context);
   }
   
   Widget _buildSearchingState() {
@@ -128,19 +117,21 @@ class _SmartShotHomePageState extends State<SmartShotHomePage> with TickerProvid
     );
   }
   
-  Widget _buildDisconnectedState(BuildContext context) {
-    return Center(
+  Widget _buildDisconnectedState(BuildContext context, ConnectivityService connectivityService) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const Icon(
+          const SizedBox(height: 40),
+          Icon(
             Icons.settings_input_antenna,
             size: 80,
-            color: Colors.white70,
+            color: Colors.grey[600],
           ),
           const SizedBox(height: 20),
           const Text(
-            'Conecta tu SmartShot\npara comenzar!',
+            'Conecta tus dispositivos\npara comenzar',
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.bold,
@@ -148,18 +139,35 @@ class _SmartShotHomePageState extends State<SmartShotHomePage> with TickerProvid
             ),
             textAlign: TextAlign.center,
           ),
+          const SizedBox(height: 16),
+          Text(
+            connectivityService.getSessionBlockMessage(),
+            style: const TextStyle(
+              fontSize: 16,
+              color: Colors.white70,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 30),
+          
+          // Widget de estado de conectividad completo
+          const ConnectivityStatusWidget(
+            isCompact: false,
+            showLabels: true,
+          ),
+          
           const SizedBox(height: 30),
           ElevatedButton(
             onPressed: () => Provider.of<BluetoothViewModel>(context, listen: false).scanAndConnect(),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              backgroundColor: Colors.white24,
+              backgroundColor: Colors.orange,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            child: const Text('Reintentar'),
+            child: const Text('Buscar Sensor Bluetooth'),
           ),
           const SizedBox(height: 20),
           // Botones para desarrollo/pruebas
@@ -199,16 +207,34 @@ class _SmartShotHomePageState extends State<SmartShotHomePage> with TickerProvid
     );
   }
   
-  Widget _buildDashboard(BluetoothViewModel viewModel, BuildContext context) {
-    return Center(
+  Widget _buildDashboard(BluetoothViewModel bluetoothViewModel, ConnectivityService connectivityService, BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
       child: Column(
         children: [
+          const SizedBox(height: 20),
+          
+          // Panel de estado de conectividad compacto en el dashboard
+          const ConnectivityStatusWidget(
+            isCompact: false,
+            showLabels: true,
+          ),
+          
           const SizedBox(height: 30),
           GestureDetector(
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => const SessionScreen())
-              );
+              if (connectivityService.canStartSession()) {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (context) => const SessionScreen())
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(connectivityService.getSessionBlockMessage()),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
             },
             child: Padding(
               padding: const EdgeInsets.all(8.0),
@@ -216,9 +242,10 @@ class _SmartShotHomePageState extends State<SmartShotHomePage> with TickerProvid
                 width: double.infinity,
                 height: 120,
                 decoration: BoxDecoration(
-                  color: Colors.orange.shade800,
+                  color: connectivityService.canStartSession() 
+                      ? Colors.orange.shade800 
+                      : Colors.grey.shade800,
                   borderRadius: BorderRadius.circular(16),
-                  
                 ),
                 child: Stack(
                   children: [
@@ -232,13 +259,17 @@ class _SmartShotHomePageState extends State<SmartShotHomePage> with TickerProvid
                             const Icon(Icons.sports_basketball, size: 40, color: Colors.white),
                       ),
                     ),
-                    const Center(
+                    Center(
                       child: Padding(
-                        padding: EdgeInsets.only(top: 16.0),
+                        padding: const EdgeInsets.only(top: 16.0),
                         child: Text(
-                          'Comenzar\npartida!',
+                          connectivityService.canStartSession()
+                              ? 'Comenzar\npartida!'
+                              : 'Conecta dispositivos\npara comenzar',
                           style: TextStyle(
-                            color: Colors.white,
+                            color: connectivityService.canStartSession() 
+                                ? Colors.white 
+                                : Colors.grey[400],
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
                           ),
@@ -251,7 +282,7 @@ class _SmartShotHomePageState extends State<SmartShotHomePage> with TickerProvid
               ),
             ),
           ),
-      ],
+        ],
       ),
     );
   }

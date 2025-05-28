@@ -4,8 +4,9 @@ import '../../shared/sessions/view_model/session_view_model.dart';
 import '../../shared/bluetooth/bluetooth_view_model.dart';
 import '../../camera/camera_view.dart';
 import '../../camera/camera_view_model.dart';
-import 'package:intl/intl.dart';
-import '../../shared/sessions/data/session_model.dart';
+import '../../shared/watch/watch_view_model.dart';
+import '../../shared/watch/watch_factory.dart';
+
 
 class SessionScreen extends StatefulWidget {
   const SessionScreen({super.key});
@@ -22,6 +23,21 @@ class _SessionScreenState extends State<SessionScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final sessionViewModel = Provider.of<SessionViewModel>(context, listen: false);
+      final bluetoothViewModel = Provider.of<BluetoothViewModel>(context, listen: false);
+      
+      // Configurar callback de debug del Bluetooth hacia el SessionViewModel
+      bluetoothViewModel.setDebugCallback((message, data) {
+        sessionViewModel.updateSensorData(message, data);
+      });
+      
+      // Inicializar el Apple Watch
+      WatchFactory.initialize(context).then((_) {
+        debugPrint('Apple Watch inicializado correctamente');
+        sessionViewModel.addDebugMessage('Apple Watch inicializado correctamente');
+      }).catchError((error) {
+        debugPrint('Error al inicializar el Apple Watch: $error');
+        sessionViewModel.addDebugMessage('Error al inicializar Apple Watch: $error');
+      });
       
       // Crear e inicializar el camera view model
       _cameraViewModel = CameraViewModel(sessionViewModel: sessionViewModel);
@@ -58,6 +74,20 @@ class _SessionScreenState extends State<SessionScreen> {
             const SizedBox(width: 8),
             const Text('SmartShot', style: TextStyle(color: Colors.white)),
             const Spacer(),
+            // Botón de debug
+            Consumer<SessionViewModel>(
+              builder: (context, sessionVM, _) {
+                return IconButton(
+                  onPressed: () => sessionVM.toggleDebugPanel(),
+                  icon: Icon(
+                    sessionVM.isDebugPanelVisible ? Icons.bug_report : Icons.bug_report_outlined,
+                    color: sessionVM.isDebugPanelVisible ? Colors.green : Colors.white,
+                    size: 24,
+                  ),
+                  tooltip: 'Panel de Debug',
+                );
+              },
+            ),
             Consumer<BluetoothViewModel>(
               builder: (context, viewModel, _) {
                 return Container(
@@ -213,9 +243,85 @@ class _SessionScreenState extends State<SessionScreen> {
                     ),
                   ),
 
+                  // Agregar botón de prueba para el Apple Watch antes de los botones de control
+                  Consumer<WatchViewModel>(
+                    builder: (context, watchViewModel, _) {
+                      return Container(
+                        margin: const EdgeInsets.all(16.0),
+                        padding: const EdgeInsets.all(16.0),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.8),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.purple.withOpacity(0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Apple Watch',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: watchViewModel.isWatchMonitoring
+                                        ? Colors.green
+                                        : Colors.red,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  watchViewModel.isWatchMonitoring
+                                      ? 'Conectado y monitoreando'
+                                      : 'No conectado',
+                                  style: TextStyle(
+                                    color: watchViewModel.isWatchMonitoring
+                                        ? Colors.green
+                                        : Colors.red,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                // Simular un tiro detectado por el Apple Watch
+                                watchViewModel.simulateShotDetection();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Simulando tiro desde Apple Watch'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.purple,
+                                foregroundColor: Colors.white,
+                              ),
+                              icon: const Icon(Icons.watch),
+                              label: const Text('Simular tiro'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+
                   // Espacio flexible para empujar los botones hacia abajo
                   SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.4,
+                    height: MediaQuery.of(context).size.height * 0.2, // Reducido para dejar espacio
                   ),
 
                   // Botones de control en la parte inferior
@@ -268,6 +374,16 @@ class _SessionScreenState extends State<SessionScreen> {
               ),
             ),
           ),
+          
+          // Panel de debug (solo visible cuando está activado)
+          if (viewModel.isDebugPanelVisible)
+            Positioned(
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: MediaQuery.of(context).size.width * 0.4,
+              child: _buildDebugPanel(viewModel),
+            ),
         ],
       ),
     );
@@ -490,5 +606,276 @@ class _SessionScreenState extends State<SessionScreen> {
     final secs = (duration.inSeconds % 60).toString().padLeft(2, '0');
 
     return hours == '0' ? '$minutes:$secs' : '$hours:$minutes:$secs';
+  }
+
+  Widget _buildDebugPanel(SessionViewModel sessionViewModel) {
+    return Container(
+      margin: const EdgeInsets.all(8.0),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.95),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.green, width: 2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header del panel de debug
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: const BoxDecoration(
+              color: Colors.green,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(10),
+                topRight: Radius.circular(10),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.bug_report, color: Colors.black, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  'Panel de Debug',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: () => sessionViewModel.clearDebugMessages(),
+                  icon: const Icon(Icons.clear, color: Colors.black, size: 18),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  tooltip: 'Limpiar log',
+                ),
+              ],
+            ),
+          ),
+          
+          // Contenido del panel
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Estados de conectividad
+                  _buildConnectivityStatus(sessionViewModel),
+                  
+                  const SizedBox(height: 12),
+                  
+                  // Datos de sensores
+                  _buildSensorData(sessionViewModel),
+                  
+                  const SizedBox(height: 12),
+                  
+                  // Log de mensajes
+                  _buildDebugMessages(sessionViewModel),
+                ],
+              ),
+            ),
+          ),
+          
+          // Botones de acción
+          Container(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => sessionViewModel.simulateSensorData(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                    child: const Text('Simular datos', style: TextStyle(fontSize: 12)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Consumer<WatchViewModel>(
+                    builder: (context, watchVM, _) {
+                      return ElevatedButton(
+                        onPressed: () => watchVM.testIntegration(),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.purple,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                        child: const Text('Test Watch', style: TextStyle(fontSize: 12)),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConnectivityStatus(SessionViewModel sessionViewModel) {
+    return Consumer2<BluetoothViewModel, WatchViewModel>(
+      builder: (context, bluetoothVM, watchVM, _) {
+        return Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.grey[900],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Conectividad',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 4),
+              _buildStatusRow('Sesión', sessionViewModel.isSessionActive ? 'Activa' : 'Inactiva', 
+                  sessionViewModel.isSessionActive ? Colors.green : Colors.red),
+              _buildStatusRow('Bluetooth', bluetoothVM.isConnected ? 'Conectado' : 'Desconectado', 
+                  bluetoothVM.isConnected ? Colors.green : Colors.red),
+              _buildStatusRow('Apple Watch', watchVM.isWatchMonitoring ? 'Monitoreando' : 'Inactivo', 
+                  watchVM.isWatchMonitoring ? Colors.green : Colors.red),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSensorData(SessionViewModel sessionViewModel) {
+    return Consumer2<BluetoothViewModel, WatchViewModel>(
+      builder: (context, bluetoothVM, watchVM, _) {
+        return Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.grey[900],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Datos de Sensores',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 4),
+              if (bluetoothVM.isConnected) ...[
+                _buildDataRow('BT Aciertos', bluetoothVM.aciertos.toString()),
+                _buildDataRow('BT Distancia', '${bluetoothVM.distancia.toStringAsFixed(1)}m'),
+                _buildDataRow('BT LED', bluetoothVM.ledState ? 'ON' : 'OFF'),
+              ],
+              _buildDataRow('Tiros detectados', sessionViewModel.currentSessionTotalShots.toString()),
+              _buildDataRow('Aciertos', sessionViewModel.successfulShots.toString()),
+              _buildDataRow('Fallos', sessionViewModel.missedShots.toString()),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDebugMessages(SessionViewModel sessionViewModel) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.grey[900],
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Log de Debug',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Expanded(
+              child: ListView.builder(
+                itemCount: sessionViewModel.debugMessages.length,
+                itemBuilder: (context, index) {
+                  final message = sessionViewModel.debugMessages[index];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 1),
+                    child: Text(
+                      message,
+                      style: const TextStyle(
+                        color: Colors.greenAccent,
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusRow(String label, String value, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$label:',
+            style: const TextStyle(color: Colors.white70, fontSize: 11),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            value,
+            style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDataRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Row(
+        children: [
+          Text(
+            '$label:',
+            style: const TextStyle(color: Colors.white70, fontSize: 11),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            value,
+            style: const TextStyle(color: Colors.cyanAccent, fontSize: 11, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
   }
 }

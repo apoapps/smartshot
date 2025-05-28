@@ -605,6 +605,8 @@ class SessionDetailScreen extends StatelessWidget {
         return Icons.camera_alt;
       case ShotDetectionType.manual:
         return Icons.person;
+      case ShotDetectionType.watch:
+        return Icons.watch;
     }
   }
   

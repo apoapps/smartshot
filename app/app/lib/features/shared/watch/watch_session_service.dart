@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 class WatchSessionService {
-  static const MethodChannel _channel = MethodChannel('com.apoapps.smartshot.watch');
+  static const MethodChannel _channel = MethodChannel('com.apoapps.smartshot.app.watchkitapp');
   static final WatchSessionService _instance = WatchSessionService._internal();
   factory WatchSessionService() => _instance;
 

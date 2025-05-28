@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:camera/camera.dart';
 import 'camera_view_model.dart';
-import 'package:app/features/shared/watch/watch_view_model.dart';
+import 'package:app/features/shared/watch/watch_service.dart';
+import 'package:app/features/shared/bluetooth/bluetooth_view_model.dart';
 
 class CameraView extends StatefulWidget {
   final bool isBackground;
@@ -22,6 +23,8 @@ class _CameraViewState extends State<CameraView>
     with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _pulseAnimation;
+  final WatchService _watchService = WatchService();
+  bool _appleWatchConnected = false;
 
   @override
   void initState() {
@@ -47,6 +50,16 @@ class _CameraViewState extends State<CameraView>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final cameraVM = Provider.of<CameraViewModel>(context, listen: false);
       cameraVM.initialize();
+      
+      // Inicializar Apple Watch
+      _initializeAppleWatch();
+    });
+  }
+  
+  Future<void> _initializeAppleWatch() async {
+    await _watchService.initialize();
+    setState(() {
+      _appleWatchConnected = true;
     });
   }
 
@@ -91,7 +104,7 @@ class _CameraViewState extends State<CameraView>
             CircularProgressIndicator(color: Colors.orange),
             SizedBox(height: 16),
             Text(
-              'Inicializando cámara y ML Kit...',
+              'Inicializando cámara...',
               style: TextStyle(color: Colors.white),
             ),
           ],
@@ -132,8 +145,6 @@ class _CameraViewState extends State<CameraView>
   }
 
   Widget _buildBackgroundCameraView(CameraViewModel cameraVM) {
-    // Usar FittedBox para preview + overlay de detección sin estirar
-    final previewSize = cameraVM.cameraController!.value.previewSize;
     return Stack(
       children: [
         Positioned.fill(
@@ -143,25 +154,7 @@ class _CameraViewState extends State<CameraView>
             child: SizedBox(
               width: 1,
               height: 1,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  CameraPreview(cameraVM.cameraController!),
-                  if (cameraVM.currentDetection != null)
-                    AnimatedBuilder(
-                      animation: _pulseAnimation,
-                      builder: (context, child) => CustomPaint(
-                        painter: BallDetectionOverlay(
-                          detection: cameraVM.currentDetection!,
-                          detectionHistory: cameraVM.detectionHistory,
-                          cameraSize: previewSize ?? Size.zero,
-                          screenSize: Size(previewSize?.width ?? 0, previewSize?.height ?? 0),
-                          pulseValue: _pulseAnimation.value,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+              child: CameraPreview(cameraVM.cameraController!),
             ),
           ),
         ),
@@ -175,346 +168,227 @@ class _CameraViewState extends State<CameraView>
   }
 
   Widget _buildCameraView(CameraViewModel cameraVM) {
-    final screenSize = MediaQuery.of(context).size;
-    
     return Container(
       color: Colors.black,
       child: Stack(
         children: [
           // Vista de cámara
-          Positioned(
+          Positioned.fill(
             child: CameraPreview(cameraVM.cameraController!),
           ),
-
-          // Overlay de detección de pelota
-          if (cameraVM.currentDetection != null)
-            Positioned.fill(
-              child: AnimatedBuilder(
-                animation: _pulseAnimation,
-                builder: (context, child) {
-                  return CustomPaint(
-                    painter: BallDetectionOverlay(
-                      detection: cameraVM.currentDetection!,
-                      detectionHistory: cameraVM.detectionHistory,
-                      cameraSize: cameraVM.cameraController!.value.previewSize ?? Size.zero,
-                      screenSize: screenSize,
-                      pulseValue: _pulseAnimation.value,
-                    ),
-                  );
-                },
-              ),
-            ),
-
-          // Panel de estado superior
+          
+          // Panel de estado de dispositivos
           Positioned(
             top: 40,
             left: 16,
             right: 16,
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.8),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: cameraVM.currentDetection != null 
-                      ? Colors.green 
-                      : Colors.grey,
-                  width: 2,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    cameraVM.currentDetection != null 
-                        ? Icons.sports_basketball 
-                        : Icons.search,
-                    color: cameraVM.currentDetection != null 
-                        ? Colors.green 
-                        : Colors.grey,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          cameraVM.currentDetection != null 
-                              ? '🏀 PELOTA DETECTADA'
-                              : '🔍 BUSCANDO PELOTA...',
-                          style: TextStyle(
-                            color: cameraVM.currentDetection != null 
-                                ? Colors.green 
-                                : Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                        if (cameraVM.currentDetection != null) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            'Confianza: ${(cameraVM.currentDetection!.confidence * 100).toStringAsFixed(1)}%',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            child: _buildDeviceStatusPanel(),
           ),
 
-          // Panel de métricas inferior
+          // Panel de control
           Positioned(
             bottom: 20,
             left: 16,
             right: 16,
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.8),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildMetric(
-                    'FRAMES',
-                    cameraVM.totalFrames.toString(),
-                    Icons.videocam,
-                    Colors.cyan,
-                  ),
-                  _buildMetric(
-                    'DETECTADOS',
-                    cameraVM.detectedFrames.toString(),
-                    Icons.visibility,
-                    Colors.green,
-                  ),
-                  _buildMetric(
-                    'PRECISIÓN',
-                    '${(cameraVM.detectionRate * 100).toStringAsFixed(1)}%',
-                    Icons.percent,
-                    Colors.orange,
-                  ),
-                  _buildMetric(
-                    'HISTORIAL',
-                    cameraVM.detectionHistory.length.toString(),
-                    Icons.timeline,
-                    Colors.purple,
-                  ),
-                ],
-              ),
-            ),
+            child: _buildControlPanel(cameraVM),
           ),
 
-          // Overlay para mostrar encestado desde Apple Watch
-          Consumer<WatchViewModel>(
-            builder: (context, watchVM, child) {
-              if (watchVM.shotDetected) {
-                return Positioned.fill(
-                  child: Stack(
-                    children: [
-                      // Overlay translúcido
-                      Container(
-                        color: Colors.black.withOpacity(0.5),
-                        child: const Center(
-                          child: Text(
-                            '¡Encestado!',
-                            style: TextStyle(
-                              color: Colors.greenAccent,
-                              fontSize: 48,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                      // Botón para simular detección (solo en modo debug)
-                      Positioned(
-                        right: 20,
-                        bottom: 100,
-                        child: FloatingActionButton(
-                          backgroundColor: Colors.orange,
-                          onPressed: () => watchVM.simulateShotDetection(),
-                          mini: true,
-                          child: const Icon(Icons.sports_basketball),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              
-              // Botón para simular detección (solo visible cuando no hay detección)
-              return Positioned(
-                right: 20,
-                bottom: 100,
-                child: FloatingActionButton(
-                  backgroundColor: Colors.orange.withOpacity(0.7),
-                  onPressed: () => watchVM.simulateShotDetection(),
-                  mini: true,
-                  child: const Icon(Icons.sports_basketball),
-                ),
-              );
-            },
+          // Botón para simular un tiro desde el Apple Watch
+          Positioned(
+            right: 20,
+            bottom: 100,
+            child: FloatingActionButton(
+              backgroundColor: Colors.orange.withOpacity(0.7),
+              onPressed: () => _watchService.simulateShotDetection(),
+              mini: true,
+              tooltip: 'Simular tiro desde Apple Watch',
+              child: const Icon(Icons.sports_basketball),
+            ),
+          ),
+          
+          // Botón para iniciar/detener monitoreo de Apple Watch
+          Positioned(
+            left: 20,
+            bottom: 100,
+            child: FloatingActionButton(
+              backgroundColor: Colors.blue.withOpacity(0.7),
+              onPressed: () => _toggleWatchMonitoring(cameraVM),
+              mini: true,
+              tooltip: 'Activar/Desactivar monitoreo de Apple Watch',
+              child: const Icon(Icons.watch),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildMetric(String label, String value, IconData icon, Color color) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: color, size: 16),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            color: color,
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-          ),
+  Widget _buildDeviceStatusPanel() {
+    // Obtener el BluetoothViewModel para verificar estado
+    final bluetoothVM = Provider.of<BluetoothViewModel>(context);
+    
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.8),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.grey,
+          width: 2,
         ),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 8,
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.bluetooth,
+                color: bluetoothVM.isConnected ? Colors.blue : Colors.grey,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Sensor Bluetooth: ${bluetoothVM.isConnected ? 'Conectado' : 'Desconectado'}',
+                style: TextStyle(
+                  color: bluetoothVM.isConnected ? Colors.blue : Colors.white70,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(
+                Icons.watch,
+                color: _appleWatchConnected ? Colors.green : Colors.grey,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Apple Watch: ${_appleWatchConnected ? 'Conectado' : 'No conectado'}',
+                style: TextStyle(
+                  color: _appleWatchConnected ? Colors.green : Colors.white70,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildControlPanel(CameraViewModel cameraVM) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.8),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildControlButton(
+            icon: Icons.watch,
+            label: 'APPLE WATCH',
+            color: Colors.blue,
+            onTap: () => _toggleWatchMonitoring(cameraVM),
+          ),
+          _buildControlButton(
+            icon: Icons.bluetooth,
+            label: 'BLUETOOTH',
+            color: Colors.green,
+            onTap: () => _toggleBluetoothConnection(),
+          ),
+          _buildControlButton(
+            icon: Icons.sports_basketball,
+            label: 'SIMULAR',
+            color: Colors.orange,
+            onTap: () => _watchService.simulateShotDetection(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildControlButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          border: Border.all(color: color.withOpacity(0.5)),
+          borderRadius: BorderRadius.circular(8),
         ),
-      ],
-    );
-  }
-}
-
-/// Painter personalizado para dibujar la detección de pelota
-class BallDetectionOverlay extends CustomPainter {
-  final BallDetection detection;
-  final List<BallDetection> detectionHistory;
-  final Size cameraSize;
-  final Size screenSize;
-  final double pulseValue;
-
-  BallDetectionOverlay({
-    required this.detection,
-    required this.detectionHistory,
-    required this.cameraSize,
-    required this.screenSize,
-    required this.pulseValue,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    debugPrint('🐶 BallDetectionOverlay.paint: size=${size}, cameraSize=${cameraSize}, center=${detection.center}');
-    final scaleX = size.width / cameraSize.width;
-    final scaleY = size.height / cameraSize.height;
-
-    // Dibujar trayectoria
-    _drawTrajectory(canvas, scaleX, scaleY);
-    
-    // Dibujar detección actual
-    _drawDetectionCircle(canvas, scaleX, scaleY);
-    
-    // Dibujar texto de posición
-    _drawPositionText(canvas, scaleX, scaleY);
-  }
-
-  void _drawTrajectory(Canvas canvas, double scaleX, double scaleY) {
-    if (detectionHistory.length < 2) return;
-
-    final trajectoryPaint = Paint()
-      ..color = Colors.cyan.withOpacity(0.7)
-      ..strokeWidth = 3.0
-      ..style = PaintingStyle.stroke;
-
-    final path = Path();
-    bool isFirst = true;
-
-    for (final detection in detectionHistory) {
-      final center = Offset(
-        detection.center.dx * scaleX,
-        detection.center.dy * scaleY,
-      );
-
-      if (isFirst) {
-        path.moveTo(center.dx, center.dy);
-        isFirst = false;
-      } else {
-        path.lineTo(center.dx, center.dy);
-      }
-
-      // Dibujar puntos pequeños en la trayectoria
-      canvas.drawCircle(
-        center,
-        3,
-        Paint()..color = Colors.cyan.withOpacity(0.5),
-      );
-    }
-
-    canvas.drawPath(path, trajectoryPaint);
-  }
-
-  void _drawDetectionCircle(Canvas canvas, double scaleX, double scaleY) {
-    final center = Offset(
-      detection.center.dx * scaleX,
-      detection.center.dy * scaleY,
-    );
-    final radius = detection.radius * ((scaleX + scaleY) / 2);
-
-    // Círculo de seguimiento con efecto de neón
-    final paint = Paint()
-      ..color = Colors.yellow
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.0
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
-
-    canvas.drawCircle(center, radius, paint);
-
-    // Punto central pulsante
-    final pulsePaint = Paint()
-      ..color = Colors.yellow.withOpacity(0.5)
-      ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(center, 8 * pulseValue, pulsePaint);
-  }
-
-  void _drawPositionText(Canvas canvas, double scaleX, double scaleY) {
-    final center = Offset(
-      detection.center.dx * scaleX,
-      detection.center.dy * scaleY,
-    );
-    
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: 'Pelota detectada\n${(detection.confidence * 100).toStringAsFixed(1)}%',
-        style: TextStyle(
-          color: Colors.yellow,
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-          shadows: [
-            Shadow(
-              color: Colors.black.withOpacity(0.8),
-              blurRadius: 4,
-              offset: const Offset(2, 2),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ],
         ),
       ),
-      textDirection: TextDirection.ltr,
-    );
-    
-    textPainter.layout();
-    textPainter.paint(
-      canvas,
-      Offset(center.dx - textPainter.width / 2, center.dy + 30),
     );
   }
-
-  @override
-  bool shouldRepaint(CustomPainter oldDelegate) => true;
+  
+  Future<void> _toggleWatchMonitoring(CameraViewModel cameraVM) async {
+    // Esta función alternará el monitoreo del Apple Watch
+    if (_appleWatchConnected) {
+      await cameraVM.startWatchMonitoring();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Monitoreo de Apple Watch activado'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Apple Watch no conectado'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+  
+  void _toggleBluetoothConnection() {
+    // Esta función alternará la conexión Bluetooth
+    final bluetoothVM = Provider.of<BluetoothViewModel>(context, listen: false);
+    
+    if (bluetoothVM.isConnected) {
+      bluetoothVM.disconnect();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sensor Bluetooth desconectado'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    } else {
+      bluetoothVM.scanAndConnect();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Conectando sensor Bluetooth...'),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    }
+  }
 } 

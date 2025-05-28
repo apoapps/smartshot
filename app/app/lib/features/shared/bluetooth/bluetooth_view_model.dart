@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import '../connectivity/connectivity_service.dart';
 
 // UUIDs para el servicio BLE y características - Deben coincidir con los del ESP32
 const String SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
@@ -20,6 +21,12 @@ class BluetoothViewModel extends ChangeNotifier {
   // Nuevo campo para seguir cuando se detecta un incremento en aciertos
   int _previousAciertos = 0; 
   bool _shotDetected = false;
+  
+  // Callback para enviar datos de debug
+  Function(String, Map<String, dynamic>)? _debugCallback;
+  
+  // Referencia al servicio de conectividad
+  final ConnectivityService _connectivityService = ConnectivityService();
 
   bool get isConnected => _isConnected;
   bool get isConnecting => _isConnecting;
@@ -34,6 +41,16 @@ class BluetoothViewModel extends ChangeNotifier {
       return true;
     }
     return false;
+  }
+  
+  /// Configura el callback para enviar datos de debug
+  void setDebugCallback(Function(String, Map<String, dynamic>) callback) {
+    _debugCallback = callback;
+  }
+  
+  /// Envía datos de debug si hay un callback configurado
+  void _sendDebugData(String message, Map<String, dynamic> data) {
+    _debugCallback?.call(message, data);
   }
 
   // Escanear y conectar al primer dispositivo encontrado con el nombre ESP32
@@ -156,8 +173,18 @@ class BluetoothViewModel extends ChangeNotifier {
 
       if (!_isConnected) {
       //  print('Característica BLE no encontrada');
+        _sendDebugData('Bluetooth', {'error': 'Característica BLE no encontrada'});
         await disconnect();
+      } else {
+        _sendDebugData('Bluetooth', {
+          'connected': true,
+          'device': device.advName,
+          'serviceFound': true,
+        });
       }
+      
+      // Actualizar el servicio de conectividad
+      _connectivityService.updateBluetoothStatus(_isConnected);
     } catch (e) {
   //    print('Error al conectar: $e');
       await disconnect();
@@ -180,6 +207,10 @@ class BluetoothViewModel extends ChangeNotifier {
     _device = null;
     _characteristic = null;
     _isConnected = false;
+    
+    // Actualizar el servicio de conectividad
+    _connectivityService.updateBluetoothStatus(false);
+    
     notifyListeners();
   }
 
@@ -311,6 +342,11 @@ class BluetoothViewModel extends ChangeNotifier {
               if (_aciertos > _previousAciertos) {
                 print('¡Acierto detectado! Incremento de $_previousAciertos a $_aciertos');
                 _shotDetected = true;
+                _sendDebugData('Bluetooth', {
+                  'shotDetected': true,
+                  'previousAciertos': _previousAciertos,
+                  'newAciertos': _aciertos,
+                });
               }
             } catch (e) {
               print('Error al convertir aciertos: $e');

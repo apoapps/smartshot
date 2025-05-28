@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSMotionUsageDescription</key>
+	<string>Esta app usa el acelerómetro para detectar movimientos de tiro de baloncesto</string>
+	<key>WKBackgroundModes</key>
+	<array>
+		<string>workout-processing</string>
+	</array>
+	<key>CFBundleIdentifier</key>
+	<string>com.example.app.watchkitapp</string>
+	<key>CFBundleDisplayName</key>
+	<string>SmartShot</string>
+</dict>
+</plist>

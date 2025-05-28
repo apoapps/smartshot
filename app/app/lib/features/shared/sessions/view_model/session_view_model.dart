@@ -38,6 +38,12 @@ class SessionViewModel extends ChangeNotifier {
   // Video seleccionado para reproducir
   String? _selectedVideoPath;
   
+  // Panel de debug
+  bool _isDebugPanelVisible = false;
+  List<String> _debugMessages = [];
+  Map<String, dynamic> _sensorData = {};
+  final int _maxDebugMessages = 50;
+  
   SessionViewModel(this._repository);
   
   // Getters
@@ -50,6 +56,11 @@ class SessionViewModel extends ChangeNotifier {
   List<SessionModel> get sessions => List.unmodifiable(_sessions);
   String? get selectedVideoPath => _selectedVideoPath;
   int get elapsedSeconds => _elapsedSeconds;
+  
+  // Getters para debug
+  bool get isDebugPanelVisible => _isDebugPanelVisible;
+  List<String> get debugMessages => List.unmodifiable(_debugMessages);
+  Map<String, dynamic> get sensorData => Map.unmodifiable(_sensorData);
   
   // Stats de la sesión actual
   int get currentSessionTotalShots => _pendingShots.length;
@@ -90,6 +101,7 @@ class SessionViewModel extends ChangeNotifier {
       
       _setState(SessionState.active);
       debugPrint('Nueva sesión iniciada: ${_sessionStartTime}');
+      addDebugMessage('Nueva sesión iniciada - ${_sessionStartTime.toString()}');
       
     } catch (e) {
       _setError('Error al iniciar sesión: $e');
@@ -207,6 +219,7 @@ class SessionViewModel extends ChangeNotifier {
       _pendingShots.add(shot);
       
       debugPrint('🏀 Tiro registrado: ${isSuccessful ? "ACIERTO" : "FALLO"} - Confianza: ${(confidence * 100).toStringAsFixed(1)}%');
+      addDebugMessage('Tiro registrado: ${isSuccessful ? "ACIERTO" : "FALLO"} - Confianza: ${(confidence * 100).toStringAsFixed(1)}%');
       
       notifyListeners();
       
@@ -241,6 +254,7 @@ class SessionViewModel extends ChangeNotifier {
       _pendingShots.add(shot);
       
       debugPrint('Tiro registrado: ${isSuccessful ? 'Acierto' : 'Fallo'} - $detectionType');
+      addDebugMessage('Tiro registrado: ${isSuccessful ? 'Acierto' : 'Fallo'} - $detectionType - Confianza: ${confidenceScore ?? 'N/A'}');
       
       notifyListeners();
       
@@ -407,6 +421,103 @@ class SessionViewModel extends ChangeNotifier {
   void _clearError() {
     _error = null;
     notifyListeners();
+  }
+  
+  // Métodos para el panel de debug
+  
+  /// Alterna la visibilidad del panel de debug
+  void toggleDebugPanel() {
+    _isDebugPanelVisible = !_isDebugPanelVisible;
+    
+    // Agregar mensaje de debug directamente para evitar recursión
+    final timestamp = DateTime.now();
+    final formattedMessage = '[${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}:${timestamp.second.toString().padLeft(2, '0')}] Panel de debug ${_isDebugPanelVisible ? "mostrado" : "ocultado"}';
+    _debugMessages.insert(0, formattedMessage);
+    
+    // Mantener solo los últimos N mensajes
+    if (_debugMessages.length > _maxDebugMessages) {
+      _debugMessages.removeRange(_maxDebugMessages, _debugMessages.length);
+    }
+    
+    notifyListeners();
+  }
+  
+  /// Agrega un mensaje al log de debug
+  void addDebugMessage(String message) {
+    final timestamp = DateTime.now();
+    final formattedMessage = '[${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}:${timestamp.second.toString().padLeft(2, '0')}] $message';
+    
+    _debugMessages.insert(0, formattedMessage);
+    
+    // Mantener solo los últimos N mensajes
+    if (_debugMessages.length > _maxDebugMessages) {
+      _debugMessages.removeRange(_maxDebugMessages, _debugMessages.length);
+    }
+    
+    if (_isDebugPanelVisible) {
+      notifyListeners();
+    }
+  }
+  
+  /// Actualiza los datos de sensores para debug
+  void updateSensorData(String sensorType, Map<String, dynamic> data) {
+    _sensorData[sensorType] = {
+      ...data,
+      'lastUpdate': DateTime.now().toIso8601String(),
+    };
+    
+    addDebugMessage('Datos actualizados: $sensorType');
+    
+    if (_isDebugPanelVisible) {
+      notifyListeners();
+    }
+  }
+  
+  /// Limpia los mensajes de debug
+  void clearDebugMessages() {
+    _debugMessages.clear();
+    
+    // Agregar mensaje de debug directamente
+    final timestamp = DateTime.now();
+    final formattedMessage = '[${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}:${timestamp.second.toString().padLeft(2, '0')}] Log de debug limpiado';
+    _debugMessages.insert(0, formattedMessage);
+    
+    notifyListeners();
+  }
+  
+  /// Obtiene el estado actual de conectividad para debug
+  Map<String, dynamic> getConnectivityStatus() {
+    return {
+      'sessionActive': _isSessionActive,
+      'sessionState': _state.toString().split('.').last,
+      'elapsedTime': _elapsedSeconds,
+      'totalShots': _pendingShots.length,
+      'successfulShots': currentSessionSuccessfulShots,
+      'missedShots': currentSessionMissedShots,
+      'sensors': _sensorData,
+    };
+  }
+  
+  /// Simula datos de sensores para testing
+  void simulateSensorData() {
+    // Simular datos del Apple Watch
+    updateSensorData('appleWatch', {
+      'connected': true,
+      'monitoring': _isSessionActive,
+      'batteryLevel': 85,
+      'lastShotDetection': DateTime.now().subtract(Duration(seconds: 30)).toIso8601String(),
+    });
+    
+    // Simular datos del sensor Bluetooth
+    updateSensorData('bluetooth', {
+      'connected': true,
+      'signalStrength': -45,
+      'aciertos': currentSessionSuccessfulShots,
+      'distancia': 3.2,
+      'lastReading': DateTime.now().toIso8601String(),
+    });
+    
+    addDebugMessage('Datos de sensores simulados');
   }
   
   @override

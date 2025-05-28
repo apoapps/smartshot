@@ -1,75 +1,62 @@
-# SmartShot - Control de LED con ESP32 y Flutter
+# SmartShot Basketball Tracker
 
-Esta aplicación permite controlar un LED conectado a un ESP32 usando Bluetooth. La aplicación está construida con Flutter y utiliza Provider para la gestión del estado.
+Aplicación para seguimiento de tiros de baloncesto que detecta y analiza tiros mediante sensores de movimiento y tecnología de Apple Watch.
 
 ## Características
 
-- Conexión Bluetooth con un ESP32
-- Control de LED en el pin D13 (encendido/apagado)
-- Solicitud del estado actual del LED
-- Interfaz de usuario intuitiva
+- Detección de tiros con el acelerómetro del Apple Watch
+- Registro de tiros acertados mediante sensores Bluetooth
+- Análisis de movimientos y estadísticas de tiro
+- Captura automática de video de los mejores momentos
+
+## Integración Flutter con Apple Watch
+
+Esta aplicación utiliza el paquete `watch_connectivity` para establecer comunicación bidireccional entre la aplicación Flutter y la extensión del Apple Watch. La implementación es mucho más simple que soluciones personalizadas utilizando MethodChannel.
+
+### Estructura de comunicación
+
+1. **Flutter (Dart)**: Utiliza el paquete `watch_connectivity` para enviar y recibir mensajes.
+2. **WatchOS (Swift)**: Implementa `WCSessionDelegate` para manejar la comunicación.
+
+### Formato de mensajes
+
+Los mensajes se envían como maps (diccionarios) con una estructura simple:
+
+- **Mensajes del Apple Watch a Flutter**:
+  ```
+  {
+    "shotDetected": true,
+    "timestamp": 1687654321.123
+  }
+  ```
+
+- **Mensajes de Flutter al Apple Watch**:
+  ```
+  {
+    "action": "startMonitoring"
+  }
+  ```
+
+### Configuración requerida
+
+Para utilizar esta integración, asegúrate de:
+
+1. Tener un Apple Watch emparejado con el iPhone.
+2. Tener la extensión Watch instalada junto con la aplicación iOS.
+3. Añadir el paquete `watch_connectivity: ^0.2.1+1` a tu `pubspec.yaml`.
 
 ## Requisitos
 
-### Para la aplicación Flutter:
-- Flutter 3.0 o superior
-- Paquetes:
-  - flutter_blue_plus: ^1.35.5
-  - provider: ^6.1.5
+- iOS 13.0+
+- WatchOS 6.0+
+- Flutter 3.0+
 
-### Para el ESP32:
-- Arduino IDE
-- Bibliotecas:
-  - BluetoothSerial
-  - ArduinoJson
+## Instalación
 
-## Configuración
+1. Clona este repositorio
+2. Ejecuta `flutter pub get`
+3. Abre el proyecto en Xcode para configurar la extensión del Watch
 
-### ESP32:
+## Desarrollo
 
-1. Conecte un LED al pin D13 del ESP32 (con una resistencia de 220-330 ohms en serie)
-2. Abra el archivo `app/lib/esp32/esp32_code.ino` en Arduino IDE
-3. Instale las bibliotecas necesarias si aún no las tiene
-4. Cargue el código al ESP32
-
-### Aplicación Flutter:
-
-1. Clone este repositorio
-2. Ejecute `flutter pub get` para instalar las dependencias
-3. Ejecute la aplicación con `flutter run`
-
-## Uso
-
-1. Encienda el ESP32
-2. Abra la aplicación SmartShot en su dispositivo móvil
-3. Pulse "Buscar y Conectar" para encontrar y conectarse al ESP32
-4. Una vez conectado, utilice los botones para controlar el LED:
-   - "ENCENDER": Enciende el LED
-   - "APAGAR": Apaga el LED
-   - "CONSULTAR ESTADO": Solicita al ESP32 el estado actual del LED
-
-## Estructura del proyecto
-
-- `lib/main.dart`: Punto de entrada de la aplicación
-- `lib/models/bluetooth_model.dart`: Modelo que gestiona la conexión Bluetooth y el estado del LED
-- `lib/screens/home_screen.dart`: Pantalla principal con la interfaz de usuario
-- `lib/esp32/esp32_code.ino`: Código de Arduino para el ESP32
-
-## Protocolo de comunicación
-
-La comunicación entre la aplicación Flutter y el ESP32 se realiza mediante mensajes JSON:
-
-### Comandos de la aplicación al ESP32:
-
-```json
-{"command": "led", "state": 1}  // Encender LED
-{"command": "led", "state": 0}  // Apagar LED
-{"command": "status"}           // Solicitar estado
-```
-
-### Respuestas del ESP32 a la aplicación:
-
-```json
-{"status": "led", "state": 1}  // LED encendido
-{"status": "led", "state": 0}  // LED apagado
-```
+Este proyecto sigue la arquitectura MVVM (Model-View-ViewModel) con Provider para la gestión del estado.
