@@ -42,7 +42,17 @@ class SessionViewModel extends ChangeNotifier {
   Timer? _shotTimeoutTimer;
   int _previousAciertos = 0;
 
+  // Referencia al CameraViewModel para registrar tiros con video
+  dynamic
+  _cameraViewModel; // Usamos dynamic para evitar dependencias circulares
+
   SessionViewModel(this._repository);
+
+  /// Establece la referencia al CameraViewModel para poder registrar tiros con video
+  void setCameraViewModel(dynamic cameraViewModel) {
+    _cameraViewModel = cameraViewModel;
+    debugPrint('📹 CameraViewModel vinculado a SessionViewModel');
+  }
 
   // Getters
   SessionState get state => _state;
@@ -281,10 +291,25 @@ class SessionViewModel extends ChangeNotifier {
       return;
     }
 
+    // Preferir CameraViewModel si está disponible para tiros con video
+    if (_cameraViewModel != null) {
+      debugPrint('🎥 Usando CameraViewModel para intento de tiro con video');
+      try {
+        _cameraViewModel.simulateShotAttempt();
+        return;
+      } catch (e) {
+        debugPrint(
+          '⚠️ Error usando CameraViewModel, fallback a modo sin video: $e',
+        );
+      }
+    }
+
     debugPrint(
-      '🏀 Iniciando intento de tiro - esperando 5 segundos por respuesta del ESP32...',
+      '🏀 Iniciando intento de tiro SIN VIDEO - esperando 5 segundos por respuesta del ESP32...',
     );
-    addDebugMessage('Intento de tiro iniciado - esperando respuesta ESP32');
+    addDebugMessage(
+      'Intento de tiro SIN VIDEO iniciado - esperando respuesta ESP32',
+    );
 
     _isWaitingForShotResult = true;
 
@@ -297,9 +322,11 @@ class SessionViewModel extends ChangeNotifier {
     _shotTimeoutTimer = Timer(const Duration(seconds: 5), () {
       // Si llegamos aquí, no hubo detección de acierto
       debugPrint(
-        '⏰ Timeout - No se detectó acierto del ESP32, registrando como fallo',
+        '⏰ Timeout - No se detectó acierto del ESP32, registrando como fallo SIN VIDEO',
       );
-      addDebugMessage('Timeout - No se detectó acierto, registrando fallo');
+      addDebugMessage(
+        'Timeout - No se detectó acierto, registrando fallo SIN VIDEO',
+      );
 
       _registerShotResult(false, ShotDetectionType.sensor);
       _isWaitingForShotResult = false;
@@ -341,10 +368,17 @@ class SessionViewModel extends ChangeNotifier {
 
   /// Registra el resultado de un tiro (método interno)
   void _registerShotResult(bool isSuccessful, ShotDetectionType detectionType) {
+    // DEPRECATED: Este método ya no debe crear clips sin video
+    // Los tiros deben registrarse a través del CameraViewModel para incluir video
+    debugPrint(
+      '⚠️ _registerShotResult está deprecated - los tiros deben registrarse con video',
+    );
+
+    // Por compatibilidad temporal, registramos sin video pero con advertencia
     final shot = ShotClip(
       timestamp: DateTime.now(),
       isSuccessful: isSuccessful,
-      videoPath: '', // Sin video por ahora para intentos manuales
+      videoPath: '', // Sin video - ESTO ES EL PROBLEMA
       confidenceScore: 0.9,
       detectionType: detectionType,
     );
@@ -352,10 +386,10 @@ class SessionViewModel extends ChangeNotifier {
     _pendingShots.add(shot);
 
     debugPrint(
-      '🏀 Resultado de tiro registrado: ${isSuccessful ? "ACIERTO" : "FALLO"}',
+      '⚠️ Resultado de tiro registrado SIN VIDEO: ${isSuccessful ? "ACIERTO" : "FALLO"}',
     );
     addDebugMessage(
-      'Resultado registrado: ${isSuccessful ? "ACIERTO" : "FALLO"}',
+      '⚠️ Resultado SIN VIDEO: ${isSuccessful ? "ACIERTO" : "FALLO"}',
     );
 
     notifyListeners();

@@ -4,6 +4,7 @@ import '../../shared/sessions/view_model/session_view_model.dart';
 import '../../shared/bluetooth/bluetooth_view_model.dart';
 import '../../camera/camera_view.dart';
 import '../../camera/camera_view_model.dart';
+import 'package:flutter/foundation.dart';
 
 class SessionScreen extends StatefulWidget {
   const SessionScreen({super.key});
@@ -14,15 +15,13 @@ class SessionScreen extends StatefulWidget {
 
 class _SessionScreenState extends State<SessionScreen> {
   CameraViewModel? _cameraViewModel;
+  SessionViewModel? _sessionViewModel;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final sessionViewModel = Provider.of<SessionViewModel>(
-        context,
-        listen: false,
-      );
+      _sessionViewModel = Provider.of<SessionViewModel>(context, listen: false);
       final bluetoothViewModel = Provider.of<BluetoothViewModel>(
         context,
         listen: false,
@@ -30,143 +29,206 @@ class _SessionScreenState extends State<SessionScreen> {
 
       // Configurar callback de debug del Bluetooth hacia el SessionViewModel
       bluetoothViewModel.setDebugCallback((message, data) {
-        sessionViewModel.updateSensorData(message, data);
+        _sessionViewModel!.updateSensorData(message, data);
       });
 
       // Crear e inicializar el camera view model
       _cameraViewModel = CameraViewModel(
-        sessionViewModel: sessionViewModel,
+        sessionViewModel: _sessionViewModel,
         bluetoothViewModel: bluetoothViewModel,
       );
 
-      // Iniciar la sesión
-      sessionViewModel.startSession();
+      // Vincular el CameraViewModel al SessionViewModel
+      _sessionViewModel!.setCameraViewModel(_cameraViewModel);
 
-      debugPrint('Sesión iniciada con nueva cámara simplificada');
+      // Inicializar la cámara primero
+      _cameraViewModel!
+          .initialize()
+          .then((_) {
+            // Iniciar la sesión después de que la cámara esté lista
+            _sessionViewModel!.startSession();
+            debugPrint('✅ Sesión iniciada con cámara inicializada');
+          })
+          .catchError((e) {
+            debugPrint('❌ Error al inicializar cámara: $e');
+            // Iniciar sesión sin cámara si falla
+            _sessionViewModel!.startSession();
+          });
     });
   }
 
   @override
   void dispose() {
+    // Usar la referencia local para evitar problemas de widget deactivated
+    if (_sessionViewModel?.isSessionActive == true) {
+      debugPrint('⏹️ Finalizando sesión activa al salir de SessionScreen');
+      _sessionViewModel!.endSession();
+    }
+
     _cameraViewModel?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF121212),
-      appBar: AppBar(
-        title: Row(
-          children: [
-            Image.asset(
-              'assets/logo.png',
-              height: 32,
-              errorBuilder:
-                  (context, error, stackTrace) => const Icon(
-                    Icons.sports_basketball,
-                    size: 32,
-                    color: Colors.white,
+    return WillPopScope(
+      onWillPop: () async {
+        // Interceptar el botón de retroceso para finalizar la sesión
+        if (_sessionViewModel?.isSessionActive == true) {
+          // Mostrar diálogo de confirmación
+          final shouldExit = await showDialog<bool>(
+            context: context,
+            builder:
+                (context) => AlertDialog(
+                  title: const Text('Finalizar Sesión'),
+                  content: const Text(
+                    '¿Deseas finalizar la sesión actual? Se guardará automáticamente.',
                   ),
-            ),
-            const SizedBox(width: 8),
-            const Text('SmartShot', style: TextStyle(color: Colors.white)),
-            const Spacer(),
-            // Botón de debug
-            Consumer<SessionViewModel>(
-              builder: (context, sessionVM, _) {
-                return IconButton(
-                  onPressed: () => sessionVM.toggleDebugPanel(),
-                  icon: Icon(
-                    sessionVM.isDebugPanelVisible
-                        ? Icons.bug_report
-                        : Icons.bug_report_outlined,
-                    color:
-                        sessionVM.isDebugPanelVisible
-                            ? Colors.green
-                            : Colors.white,
-                    size: 24,
-                  ),
-                  tooltip: 'Panel de Debug',
-                );
-              },
-            ),
-            Consumer<BluetoothViewModel>(
-              builder: (context, viewModel, _) {
-                return Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color:
-                        viewModel.isConnected
-                            ? Colors.green.withOpacity(0.2)
-                            : Colors.red.withOpacity(0.2),
-                    border: Border.all(
-                      color: viewModel.isConnected ? Colors.green : Colors.red,
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: const Text('Cancelar'),
                     ),
-                  ),
-                  child: Text(
-                    viewModel.isConnected ? 'Connected' : 'Disconnected',
-                    style: TextStyle(
-                      color: viewModel.isConnected ? Colors.green : Colors.red,
-                      fontSize: 12,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
-      body: Consumer<SessionViewModel>(
-        builder: (context, sessionViewModel, _) {
-          switch (sessionViewModel.state) {
-            case SessionState.loading:
-              return const Center(child: CircularProgressIndicator());
-
-            case SessionState.active:
-              return _buildActiveSession(sessionViewModel);
-
-            case SessionState.paused:
-              return _buildPausedSession(sessionViewModel);
-
-            case SessionState.completed:
-              return _buildCompletedSession(sessionViewModel);
-
-            case SessionState.error:
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
-                      color: Colors.red,
-                      size: 48,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Error: ${sessionViewModel.errorMessage ?? "Unknown"}',
-                      style: const TextStyle(color: Colors.red),
-                    ),
-                    const SizedBox(height: 24),
                     ElevatedButton(
-                      onPressed: () => sessionViewModel.startSession(),
-                      child: const Text('Retry'),
+                      onPressed: () {
+                        Navigator.of(context).pop(true);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Finalizar'),
                     ),
                   ],
                 ),
-              );
+          );
 
-            case SessionState.initial:
-            default:
-              return const Center(child: Text('Starting session...'));
+          if (shouldExit == true) {
+            await _sessionViewModel!.endSession();
+            return true;
+          } else {
+            return false;
           }
-        },
+        }
+
+        return true;
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF121212),
+        appBar: AppBar(
+          title: Row(
+            children: [
+              Image.asset(
+                'assets/logo.png',
+                height: 32,
+                errorBuilder:
+                    (context, error, stackTrace) => const Icon(
+                      Icons.sports_basketball,
+                      size: 32,
+                      color: Colors.white,
+                    ),
+              ),
+              const SizedBox(width: 8),
+              const Text('SmartShot', style: TextStyle(color: Colors.white)),
+              const Spacer(),
+              // Botón de debug
+              Consumer<SessionViewModel>(
+                builder: (context, sessionVM, _) {
+                  return IconButton(
+                    onPressed: () => sessionVM.toggleDebugPanel(),
+                    icon: Icon(
+                      sessionVM.isDebugPanelVisible
+                          ? Icons.bug_report
+                          : Icons.bug_report_outlined,
+                      color:
+                          sessionVM.isDebugPanelVisible
+                              ? Colors.green
+                              : Colors.white,
+                      size: 24,
+                    ),
+                    tooltip: 'Panel de Debug',
+                  );
+                },
+              ),
+              Consumer<BluetoothViewModel>(
+                builder: (context, viewModel, _) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      color:
+                          viewModel.isConnected
+                              ? Colors.green.withOpacity(0.2)
+                              : Colors.red.withOpacity(0.2),
+                      border: Border.all(
+                        color:
+                            viewModel.isConnected ? Colors.green : Colors.red,
+                      ),
+                    ),
+                    child: Text(
+                      viewModel.isConnected ? 'Connected' : 'Disconnected',
+                      style: TextStyle(
+                        color:
+                            viewModel.isConnected ? Colors.green : Colors.red,
+                        fontSize: 12,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
+        body: Consumer<SessionViewModel>(
+          builder: (context, sessionViewModel, _) {
+            switch (sessionViewModel.state) {
+              case SessionState.loading:
+                return const Center(child: CircularProgressIndicator());
+
+              case SessionState.active:
+                return _buildActiveSession(sessionViewModel);
+
+              case SessionState.paused:
+                return _buildPausedSession(sessionViewModel);
+
+              case SessionState.completed:
+                return _buildCompletedSession(sessionViewModel);
+
+              case SessionState.error:
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        color: Colors.red,
+                        size: 48,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Error: ${sessionViewModel.errorMessage ?? "Unknown"}',
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: () => sessionViewModel.startSession(),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                );
+
+              case SessionState.initial:
+              default:
+                return const Center(child: Text('Starting session...'));
+            }
+          },
+        ),
       ),
     );
   }
@@ -246,7 +308,7 @@ class _SessionScreenState extends State<SessionScreen> {
                     ),
                   ),
 
-                  // GestureDetector oculto para intento de tiro (doble tap)
+                  // GestureDetector para intento de tiro (doble tap) - invisible salvo cuando espera
                   GestureDetector(
                     onDoubleTap:
                         viewModel.isWaitingForShotResult
@@ -255,51 +317,57 @@ class _SessionScreenState extends State<SessionScreen> {
                               viewModel.attemptShot();
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text('Intento de tiro detectado'),
+                                  content: Text(
+                                    '🏀 Intento de tiro registrado - Esperando ESP32...',
+                                  ),
                                   duration: Duration(seconds: 2),
                                   backgroundColor: Colors.orange,
                                 ),
                               );
                             },
-                    child: Container(
-                      margin: const EdgeInsets.all(16.0),
-                      padding: const EdgeInsets.all(16.0),
-                      decoration: BoxDecoration(
-                        color: Colors.transparent,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      height: 80, // Área invisible para hacer doble tap
+                    behavior: HitTestBehavior.translucent,
+                    child: SizedBox(
+                      height: 120,
                       width: double.infinity,
                       child:
                           viewModel.isWaitingForShotResult
                               ? Center(
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const SizedBox(
-                                      width: 20,
-                                      height: 20,
+                                  children: const [
+                                    SizedBox(
+                                      width: 40,
+                                      height: 40,
                                       child: CircularProgressIndicator(
-                                        strokeWidth: 2,
+                                        strokeWidth: 4,
                                         valueColor:
                                             AlwaysStoppedAnimation<Color>(
                                               Colors.orange,
                                             ),
                                       ),
                                     ),
-                                    const SizedBox(height: 8),
-                                    const Text(
-                                      'Esperando respuesta del ESP32...',
+                                    SizedBox(height: 12),
+                                    Text(
+                                      '⏳ Esperando respuesta del ESP32...',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: Colors.orange,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    SizedBox(height: 4),
+                                    Text(
+                                      'El sensor detectará el resultado',
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: Colors.orange,
+                                        color: Colors.white70,
                                         fontStyle: FontStyle.italic,
                                       ),
                                     ),
                                   ],
                                 ),
                               )
-                              : null, // Invisible cuando no está esperando
+                              : null,
                     ),
                   ),
 
@@ -362,7 +430,7 @@ class _SessionScreenState extends State<SessionScreen> {
           ),
 
           // Panel de debug (solo visible cuando está activado)
-          if (viewModel.isDebugPanelVisible)
+          if (kDebugMode && viewModel.isDebugPanelVisible)
             Positioned(
               top: 0,
               right: 0,
@@ -669,21 +737,81 @@ class _SessionScreenState extends State<SessionScreen> {
           // Botones de acción
           Container(
             padding: const EdgeInsets.all(8),
-            child: Row(
+            child: Column(
               children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => sessionViewModel.simulateSensorData(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => sessionViewModel.simulateSensorData(),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                        child: const Text(
+                          'Simular datos',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
                     ),
-                    child: const Text(
-                      'Simular datos',
-                      style: TextStyle(fontSize: 12),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          _cameraViewModel?.simulateManualShot(
+                            isSuccessful: true,
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('🏀 Acierto con video registrado'),
+                              duration: Duration(seconds: 2),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                        child: const Text(
+                          'Simular Acierto',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          _cameraViewModel?.simulateManualShot(
+                            isSuccessful: false,
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('🏀 Fallo con video registrado'),
+                              duration: Duration(seconds: 2),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                        child: const Text(
+                          'Simular Fallo',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
