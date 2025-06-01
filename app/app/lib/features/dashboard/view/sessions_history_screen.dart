@@ -30,13 +30,16 @@ class _SessionsHistoryScreenState extends State<SessionsHistoryScreen> {
   Future<void> _loadSessions() async {
     try {
       setState(() => _isLoading = true);
-      
-      final sessionViewModel = Provider.of<SessionViewModel>(context, listen: false);
+
+      final sessionViewModel = Provider.of<SessionViewModel>(
+        context,
+        listen: false,
+      );
       _sessions = await sessionViewModel.getAllSessions();
-      
+
       // Ordenar sesiones por fecha (más reciente primero)
       _sessions.sort((a, b) => b.dateTime.compareTo(a.dateTime));
-      
+
       setState(() => _isLoading = false);
     } catch (e) {
       setState(() {
@@ -50,16 +53,16 @@ class _SessionsHistoryScreenState extends State<SessionsHistoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
-  
+
       body: _buildBody(),
     );
   }
-  
+
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    
+
     if (_errorMessage != null) {
       return Center(
         child: Column(
@@ -81,7 +84,7 @@ class _SessionsHistoryScreenState extends State<SessionsHistoryScreen> {
         ),
       );
     }
-    
+
     if (_sessions.isEmpty) {
       return Center(
         child: Column(
@@ -100,17 +103,14 @@ class _SessionsHistoryScreenState extends State<SessionsHistoryScreen> {
             const SizedBox(height: 8),
             const Text(
               'Comienza a entrenar para registrar tus progresos',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.white70,
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.white70),
               textAlign: TextAlign.center,
             ),
           ],
         ),
       );
     }
-    
+
     return ListView.builder(
       itemCount: _sessions.length,
       padding: const EdgeInsets.all(16),
@@ -120,23 +120,21 @@ class _SessionsHistoryScreenState extends State<SessionsHistoryScreen> {
       },
     );
   }
-  
+
   Widget _buildSessionCard(SessionModel session) {
     final dateFormat = DateFormat('EEEE, d MMMM yyyy', 'es_ES');
     final timeFormat = DateFormat('HH:mm', 'es_ES');
     final formattedDate = dateFormat.format(session.dateTime);
     final formattedTime = timeFormat.format(session.dateTime);
-    
+
     final Duration duration = Duration(seconds: session.durationInSeconds);
     final formattedDuration = _formatDuration(session.durationInSeconds);
-    
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       color: const Color(0xFF1E1E1E),
       elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: () => _showSessionDetails(session),
         borderRadius: BorderRadius.circular(12),
@@ -158,10 +156,7 @@ class _SessionsHistoryScreenState extends State<SessionsHistoryScreen> {
                   ),
                   Text(
                     formattedTime,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 14,
-                    ),
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
                   ),
                 ],
               ),
@@ -179,7 +174,11 @@ class _SessionsHistoryScreenState extends State<SessionsHistoryScreen> {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  const Icon(Icons.sports_basketball, color: Colors.orange, size: 16),
+                  const Icon(
+                    Icons.sports_basketball,
+                    color: Colors.orange,
+                    size: 16,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'Tiros: ${session.totalShots}',
@@ -193,7 +192,9 @@ class _SessionsHistoryScreenState extends State<SessionsHistoryScreen> {
               LinearProgressIndicator(
                 value: session.successRate / 100,
                 backgroundColor: Colors.red.shade700.withOpacity(0.3),
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.green.shade700),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  Colors.green.shade700,
+                ),
                 borderRadius: BorderRadius.circular(4),
               ),
               const SizedBox(height: 8),
@@ -203,7 +204,10 @@ class _SessionsHistoryScreenState extends State<SessionsHistoryScreen> {
                   Text(
                     'Efectividad: ${session.successRate.toStringAsFixed(1)}%',
                     style: TextStyle(
-                      color: session.successRate > 50 ? Colors.green : Colors.orange,
+                      color:
+                          session.successRate > 50
+                              ? Colors.green
+                              : Colors.orange,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -215,7 +219,7 @@ class _SessionsHistoryScreenState extends State<SessionsHistoryScreen> {
       ),
     );
   }
-  
+
   Widget _buildStatsRow(SessionModel session) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -233,7 +237,7 @@ class _SessionsHistoryScreenState extends State<SessionsHistoryScreen> {
       ],
     );
   }
-  
+
   Widget _buildStatItem({
     required int count,
     required String label,
@@ -251,15 +255,12 @@ class _SessionsHistoryScreenState extends State<SessionsHistoryScreen> {
         ),
         Text(
           label,
-          style: TextStyle(
-            fontSize: 12,
-            color: color.withOpacity(0.7),
-          ),
+          style: TextStyle(fontSize: 12, color: color.withOpacity(0.7)),
         ),
       ],
     );
   }
-  
+
   void _showSessionDetails(SessionModel session) {
     // Implementar vista detallada de la sesión con clips
     Navigator.of(context).push(
@@ -268,28 +269,26 @@ class _SessionsHistoryScreenState extends State<SessionsHistoryScreen> {
       ),
     );
   }
-  
+
   String _formatDuration(int seconds) {
     final duration = Duration(seconds: seconds);
     final hours = duration.inHours;
     final minutes = (duration.inMinutes % 60).toString().padLeft(2, '0');
     final secs = (duration.inSeconds % 60).toString().padLeft(2, '0');
-    
-    return hours > 0 
-        ? '$hours h $minutes min'
-        : '$minutes min $secs s';
+
+    return hours > 0 ? '$hours h $minutes min' : '$minutes min $secs s';
   }
 }
 
 class SessionDetailScreen extends StatelessWidget {
   final SessionModel session;
-  
+
   const SessionDetailScreen({super.key, required this.session});
-  
+
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('EEEE, d MMMM yyyy • HH:mm', 'es_ES');
-    
+
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
@@ -368,9 +367,9 @@ class SessionDetailScreen extends StatelessWidget {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             const Text(
               'Clips guardados',
               style: TextStyle(
@@ -379,9 +378,9 @@ class SessionDetailScreen extends StatelessWidget {
                 color: Colors.white,
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             if (session.shotClips.isEmpty)
               const Center(
                 child: Padding(
@@ -399,7 +398,7 @@ class SessionDetailScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildStatRow(
     String label,
     String value,
@@ -412,10 +411,7 @@ class SessionDetailScreen extends StatelessWidget {
         const SizedBox(width: 8),
         Text(
           label,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 14,
-          ),
+          style: const TextStyle(color: Colors.white70, fontSize: 14),
         ),
         const Spacer(),
         Text(
@@ -429,7 +425,7 @@ class SessionDetailScreen extends StatelessWidget {
       ],
     );
   }
-  
+
   Widget _buildClipsList(List<ShotClip> clips) {
     return ListView.builder(
       shrinkWrap: true,
@@ -441,8 +437,9 @@ class SessionDetailScreen extends StatelessWidget {
           future: _checkVideoExists(clip.videoPath),
           builder: (context, snapshot) {
             final videoExists = snapshot.data ?? false;
-            final isLoading = snapshot.connectionState == ConnectionState.waiting;
-            
+            final isLoading =
+                snapshot.connectionState == ConnectionState.waiting;
+
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
               color: const Color(0xFF1E1E1E),
@@ -475,11 +472,7 @@ class SessionDetailScreen extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     if (!videoExists && !isLoading)
-                      const Icon(
-                        Icons.warning,
-                        color: Colors.orange,
-                        size: 16,
-                      ),
+                      const Icon(Icons.warning, color: Colors.orange, size: 16),
                   ],
                 ),
                 subtitle: Column(
@@ -500,10 +493,7 @@ class SessionDetailScreen extends StatelessWidget {
                     if (!videoExists && !isLoading)
                       const Text(
                         'Video no disponible',
-                        style: TextStyle(
-                          color: Colors.orange,
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: Colors.orange, fontSize: 12),
                       ),
                   ],
                 ),
@@ -517,15 +507,18 @@ class SessionDetailScreen extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Icon(
-                      videoExists ? Icons.play_circle_filled : Icons.error_outline,
+                      videoExists
+                          ? Icons.play_circle_filled
+                          : Icons.error_outline,
                       color: videoExists ? Colors.blue : Colors.orange,
                       size: 20,
                     ),
                   ],
                 ),
-                onTap: videoExists && !isLoading 
-                    ? () => _playVideo(context, clip.videoPath)
-                    : null,
+                onTap:
+                    videoExists && !isLoading
+                        ? () => _playVideo(context, clip.videoPath)
+                        : null,
               ),
             );
           },
@@ -533,7 +526,7 @@ class SessionDetailScreen extends StatelessWidget {
       },
     );
   }
-  
+
   Future<bool> _checkVideoExists(String videoPath) async {
     try {
       if (videoPath.isEmpty) return false;
@@ -544,7 +537,7 @@ class SessionDetailScreen extends StatelessWidget {
       return false;
     }
   }
-  
+
   void _playVideo(BuildContext context, String videoPath) {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -553,50 +546,57 @@ class SessionDetailScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   void _showVideoDebugInfo(BuildContext context) async {
     final clips = session.shotClips;
     final debugInfo = StringBuffer();
-    
+
     debugInfo.writeln('=== DEBUG DE VIDEOS ===\n');
     debugInfo.writeln('Total de clips: ${clips.length}\n');
-    
+
     for (int i = 0; i < clips.length; i++) {
       final clip = clips[i];
       final exists = await _checkVideoExists(clip.videoPath);
-      
+
       debugInfo.writeln('Clip #${i + 1}:');
-      debugInfo.writeln('  Resultado: ${clip.isSuccessful ? "Acierto" : "Fallo"}');
+      debugInfo.writeln(
+        '  Resultado: ${clip.isSuccessful ? "Acierto" : "Fallo"}',
+      );
       debugInfo.writeln('  Archivo: ${clip.videoPath}');
       debugInfo.writeln('  Existe: ${exists ? "SÍ" : "NO"}');
       debugInfo.writeln('  Detección: ${clip.detectionType}');
-      debugInfo.writeln('  Fecha: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(clip.timestamp)}');
+      debugInfo.writeln(
+        '  Fecha: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(clip.timestamp)}',
+      );
       if (clip.confidenceScore != null) {
-        debugInfo.writeln('  Confianza: ${(clip.confidenceScore! * 100).toStringAsFixed(1)}%');
+        debugInfo.writeln(
+          '  Confianza: ${(clip.confidenceScore! * 100).toStringAsFixed(1)}%',
+        );
       }
       debugInfo.writeln();
     }
-    
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Info de Debug'),
-        content: SingleChildScrollView(
-          child: Text(
-            debugInfo.toString(),
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Info de Debug'),
+            content: SingleChildScrollView(
+              child: Text(
+                debugInfo.toString(),
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cerrar'),
+              ),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
     );
   }
-  
+
   IconData _getDetectionTypeIcon(ShotDetectionType type) {
     switch (type) {
       case ShotDetectionType.sensor:
@@ -605,11 +605,9 @@ class SessionDetailScreen extends StatelessWidget {
         return Icons.camera_alt;
       case ShotDetectionType.manual:
         return Icons.person;
-      case ShotDetectionType.watch:
-        return Icons.watch;
     }
   }
-  
+
   Color _getEffectivityColor(double rate) {
     if (rate >= 80) return Colors.green;
     if (rate >= 60) return Colors.lightGreen;
@@ -617,15 +615,13 @@ class SessionDetailScreen extends StatelessWidget {
     if (rate >= 20) return Colors.orange;
     return Colors.red;
   }
-  
+
   String _formatDuration(int seconds) {
     final duration = Duration(seconds: seconds);
     final hours = duration.inHours;
     final minutes = (duration.inMinutes % 60).toString().padLeft(2, '0');
     final secs = (duration.inSeconds % 60).toString().padLeft(2, '0');
-    
-    return hours > 0 
-        ? '$hours h $minutes min $secs s'
-        : '$minutes min $secs s';
+
+    return hours > 0 ? '$hours h $minutes min $secs s' : '$minutes min $secs s';
   }
-} 
+}

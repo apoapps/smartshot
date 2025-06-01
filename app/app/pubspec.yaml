@@ -50,7 +50,6 @@ dependencies:
   
   # Google ML Kit unificado para detección en tiempo real
   google_ml_kit: ^0.20.0
-  watch_connectivity: ^0.2.1+1
 
 dev_dependencies:
   flutter_test:

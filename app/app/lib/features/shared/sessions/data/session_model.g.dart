@@ -117,8 +117,6 @@ class ShotDetectionTypeAdapter extends TypeAdapter<ShotDetectionType> {
         return ShotDetectionType.camera;
       case 2:
         return ShotDetectionType.manual;
-      case 3:
-        return ShotDetectionType.watch;
       default:
         return ShotDetectionType.sensor;
     }
@@ -135,9 +133,6 @@ class ShotDetectionTypeAdapter extends TypeAdapter<ShotDetectionType> {
         break;
       case ShotDetectionType.manual:
         writer.writeByte(2);
-        break;
-      case ShotDetectionType.watch:
-        writer.writeByte(3);
         break;
     }
   }

@@ -7,8 +7,6 @@ import 'features/camera/camera_view_model.dart';
 import 'features/dashboard/view/dashboard_view.dart';
 import 'features/shared/sessions/data/session_repository.dart';
 import 'features/shared/sessions/view_model/session_view_model.dart';
-import 'features/shared/watch/watch_view_model.dart';
-import 'features/shared/watch/watch_factory.dart';
 import 'features/shared/connectivity/connectivity_service.dart';
 
 void main() async {
@@ -37,10 +35,7 @@ void main() async {
           update: (context, sessionRepository, previous) => 
               previous ?? SessionViewModel(sessionRepository),
         ),
-        // ChangeNotifierProvider(create: (context) => WatchViewModel()),
-        // Simplificado: CameraViewModel ya no necesita múltiples dependencias
-        // Se creará localmente en SessionScreen con referencia a SessionViewModel
-        ...WatchFactory.registerProviders(),
+        // CameraViewModel se creará localmente en SessionScreen
       ],
       child: const SmartShotApp(),
     ),

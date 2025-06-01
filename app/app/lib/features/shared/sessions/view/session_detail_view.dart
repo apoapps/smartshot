@@ -8,16 +8,15 @@ import 'package:app/features/shared/sessions/view/video_player_view.dart';
 class SessionDetailView extends StatelessWidget {
   final SessionModel session;
 
-  const SessionDetailView({
-    Key? key,
-    required this.session,
-  }) : super(key: key);
+  const SessionDetailView({Key? key, required this.session}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Sesión ${DateFormat('dd/MM/yyyy').format(session.dateTime)}'),
+        title: Text(
+          'Sesión ${DateFormat('dd/MM/yyyy').format(session.dateTime)}',
+        ),
         backgroundColor: Colors.orange,
         foregroundColor: Colors.white,
       ),
@@ -46,14 +45,13 @@ class SessionDetailView extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(
-                  Icons.calendar_today,
-                  color: Colors.orange[700],
-                  size: 20,
-                ),
+                Icon(Icons.calendar_today, color: Colors.orange[700], size: 20),
                 const SizedBox(width: 8),
                 Text(
-                  DateFormat('EEEE, dd MMMM yyyy', 'es_ES').format(session.dateTime),
+                  DateFormat(
+                    'EEEE, dd MMMM yyyy',
+                    'es_ES',
+                  ).format(session.dateTime),
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -64,32 +62,18 @@ class SessionDetailView extends StatelessWidget {
             const SizedBox(height: 8),
             Row(
               children: [
-                Icon(
-                  Icons.access_time,
-                  color: Colors.grey[600],
-                  size: 16,
-                ),
+                Icon(Icons.access_time, color: Colors.grey[600], size: 16),
                 const SizedBox(width: 4),
                 Text(
                   DateFormat('HH:mm').format(session.dateTime),
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
                 ),
                 const SizedBox(width: 16),
-                Icon(
-                  Icons.timer,
-                  color: Colors.grey[600],
-                  size: 16,
-                ),
+                Icon(Icons.timer, color: Colors.grey[600], size: 16),
                 const SizedBox(width: 4),
                 Text(
                   _formatDuration(Duration(seconds: session.durationInSeconds)),
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
                 ),
               ],
             ),
@@ -108,10 +92,7 @@ class SessionDetailView extends StatelessWidget {
           children: [
             const Text(
               'Estadísticas de la Sesión',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             Row(
@@ -190,10 +171,7 @@ class SessionDetailView extends StatelessWidget {
           ),
           Text(
             title,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
-            ),
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             textAlign: TextAlign.center,
           ),
         ],
@@ -209,18 +187,11 @@ class SessionDetailView extends StatelessWidget {
           child: Center(
             child: Column(
               children: [
-                Icon(
-                  Icons.videocam_off,
-                  size: 48,
-                  color: Colors.grey[400],
-                ),
+                Icon(Icons.videocam_off, size: 48, color: Colors.grey[400]),
                 const SizedBox(height: 16),
                 Text(
                   'No hay clips de video en esta sesión',
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 16,
-                  ),
+                  style: TextStyle(color: Colors.grey[600], fontSize: 16),
                 ),
               ],
             ),
@@ -234,10 +205,7 @@ class SessionDetailView extends StatelessWidget {
       children: [
         Text(
           'Clips de Video (${session.shotClips.length})',
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
         ListView.builder(
@@ -271,7 +239,7 @@ class SessionDetailView extends StatelessWidget {
     final hours = duration.inHours;
     final minutes = duration.inMinutes % 60;
     final seconds = duration.inSeconds % 60;
-    
+
     if (hours > 0) {
       return '${hours}h ${minutes}m ${seconds}s';
     } else if (minutes > 0) {
@@ -405,11 +373,6 @@ class _ShotClipCard extends StatelessWidget {
         label = 'Manual';
         icon = Icons.touch_app;
         break;
-      case ShotDetectionType.watch:
-        chipColor = Colors.amber;
-        label = 'Apple Watch';
-        icon = Icons.watch;
-        break;
     }
 
     return Container(
@@ -436,4 +399,4 @@ class _ShotClipCard extends StatelessWidget {
       ),
     );
   }
-} 
+}

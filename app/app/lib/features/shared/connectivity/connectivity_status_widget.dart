@@ -30,25 +30,12 @@ class ConnectivityStatusWidget extends StatelessWidget {
   }
 
   Widget _buildCompactView(BuildContext context, ConnectivityService service) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _buildStatusIndicator(
-          context,
-          service.bluetoothStatus,
-          Icons.bluetooth,
-          'Bluetooth',
-          () => _showConnectivityDialog(context, service.getBluetoothInfo()),
-        ),
-        const SizedBox(width: 8),
-        _buildStatusIndicator(
-          context,
-          service.watchStatus,
-          Icons.watch,
-          'Watch',
-          () => _showConnectivityDialog(context, service.getWatchInfo()),
-        ),
-      ],
+    return _buildStatusIndicator(
+      context,
+      service.esp32Status,
+      Icons.bluetooth,
+      'ESP32',
+      () => _showConnectivityDialog(context, service.getBluetoothInfo()),
     );
   }
 
@@ -85,31 +72,22 @@ class ConnectivityStatusWidget extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          
-          // Estado del Bluetooth
+
+          // Estado del Bluetooth ESP32
           GestureDetector(
-            onTap: () => _showConnectivityDialog(context, service.getBluetoothInfo()),
+            onTap:
+                () => _showConnectivityDialog(
+                  context,
+                  service.getBluetoothInfo(),
+                ),
             child: _buildStatusRow(
-              'Sensor Bluetooth',
+              'Sensor ESP32',
               service.getBluetoothInfo().description,
-              service.bluetoothStatus,
+              service.getBluetoothInfo().status,
               Icons.bluetooth,
             ),
           ),
-          
-          const SizedBox(height: 8),
-          
-          // Estado del Apple Watch
-          GestureDetector(
-            onTap: () => _showConnectivityDialog(context, service.getWatchInfo()),
-            child: _buildStatusRow(
-              'Apple Watch',
-              service.getWatchInfo().description,
-              service.watchStatus,
-              Icons.watch,
-            ),
-          ),
-          
+
           // Mostrar advertencia si no se puede iniciar sesión
           if (!service.canStartSession()) ...[
             const SizedBox(height: 12),
@@ -126,7 +104,7 @@ class ConnectivityStatusWidget extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'No se pueden iniciar sesiones sin al menos un dispositivo conectado',
+                      'Necesitas conectar el sensor ESP32 para iniciar sesiones',
                       style: const TextStyle(
                         color: Colors.orange,
                         fontSize: 12,
@@ -150,7 +128,7 @@ class ConnectivityStatusWidget extends StatelessWidget {
     VoidCallback onTap,
   ) {
     final color = _getStatusColor(status);
-    
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -188,7 +166,7 @@ class ConnectivityStatusWidget extends StatelessWidget {
     IconData icon,
   ) {
     final color = _getStatusColor(status);
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -207,21 +185,11 @@ class ConnectivityStatusWidget extends StatelessWidget {
                     fontSize: 14,
                   ),
                 ),
-                Text(
-                  description,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 12,
-                  ),
-                ),
+                Text(description, style: TextStyle(color: color, fontSize: 12)),
               ],
             ),
           ),
-          Icon(
-            Icons.info_outline,
-            color: Colors.grey[600],
-            size: 16,
-          ),
+          Icon(Icons.info_outline, color: Colors.grey[600], size: 16),
         ],
       ),
     );
@@ -243,79 +211,83 @@ class ConnectivityStatusWidget extends StatelessWidget {
   void _showConnectivityDialog(BuildContext context, ConnectivityInfo info) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: _getStatusColor(info.status).withOpacity(0.3),
-          ),
-        ),
-        title: Row(
-          children: [
-            Icon(
-              info.status == ConnectivityStatus.connected
-                  ? Icons.check_circle
-                  : info.status == ConnectivityStatus.warning
+      builder:
+          (context) => AlertDialog(
+            backgroundColor: Colors.grey[900],
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: _getStatusColor(info.status).withOpacity(0.3),
+              ),
+            ),
+            title: Row(
+              children: [
+                Icon(
+                  info.status == ConnectivityStatus.connected
+                      ? Icons.check_circle
+                      : info.status == ConnectivityStatus.warning
                       ? Icons.warning
                       : Icons.error,
-              color: _getStatusColor(info.status),
+                  color: _getStatusColor(info.status),
+                ),
+                const SizedBox(width: 8),
+                Text(info.title, style: const TextStyle(color: Colors.white)),
+              ],
             ),
-            const SizedBox(width: 8),
-            Text(
-              info.title,
-              style: const TextStyle(color: Colors.white),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  info.description,
+                  style: TextStyle(
+                    color: _getStatusColor(info.status),
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ...info.details
+                    .map(
+                      (detail) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          detail,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ],
             ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              info.description,
-              style: TextStyle(
-                color: _getStatusColor(info.status),
-                fontWeight: FontWeight.w500,
-                fontSize: 16,
-              ),
-            ),
-            const SizedBox(height: 16),
-            ...info.details.map((detail) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                detail,
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 14,
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text(
+                  'Cerrar',
+                  style: TextStyle(color: Colors.orange),
                 ),
               ),
-            )).toList(),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text(
-              'Cerrar',
-              style: TextStyle(color: Colors.orange),
-            ),
+              if (info.status != ConnectivityStatus.connected)
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    // Forzar verificación de estado
+                    Provider.of<ConnectivityService>(
+                      context,
+                      listen: false,
+                    ).forceCheck();
+                  },
+                  child: const Text(
+                    'Reintentar',
+                    style: TextStyle(color: Colors.blue),
+                  ),
+                ),
+            ],
           ),
-          if (info.status != ConnectivityStatus.connected)
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                // Forzar verificación de estado
-                Provider.of<ConnectivityService>(context, listen: false)
-                    .forceCheck();
-              },
-              child: const Text(
-                'Reintentar',
-                style: TextStyle(color: Colors.blue),
-              ),
-            ),
-        ],
-      ),
     );
   }
-} 
+}

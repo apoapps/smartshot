@@ -4,9 +4,6 @@ import '../../shared/sessions/view_model/session_view_model.dart';
 import '../../shared/bluetooth/bluetooth_view_model.dart';
 import '../../camera/camera_view.dart';
 import '../../camera/camera_view_model.dart';
-import '../../shared/watch/watch_view_model.dart';
-import '../../shared/watch/watch_factory.dart';
-
 
 class SessionScreen extends StatefulWidget {
   const SessionScreen({super.key});
@@ -22,29 +19,29 @@ class _SessionScreenState extends State<SessionScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final sessionViewModel = Provider.of<SessionViewModel>(context, listen: false);
-      final bluetoothViewModel = Provider.of<BluetoothViewModel>(context, listen: false);
-      
+      final sessionViewModel = Provider.of<SessionViewModel>(
+        context,
+        listen: false,
+      );
+      final bluetoothViewModel = Provider.of<BluetoothViewModel>(
+        context,
+        listen: false,
+      );
+
       // Configurar callback de debug del Bluetooth hacia el SessionViewModel
       bluetoothViewModel.setDebugCallback((message, data) {
         sessionViewModel.updateSensorData(message, data);
       });
-      
-      // Inicializar el Apple Watch
-      WatchFactory.initialize(context).then((_) {
-        debugPrint('Apple Watch inicializado correctamente');
-        sessionViewModel.addDebugMessage('Apple Watch inicializado correctamente');
-      }).catchError((error) {
-        debugPrint('Error al inicializar el Apple Watch: $error');
-        sessionViewModel.addDebugMessage('Error al inicializar Apple Watch: $error');
-      });
-      
+
       // Crear e inicializar el camera view model
-      _cameraViewModel = CameraViewModel(sessionViewModel: sessionViewModel);
-      
+      _cameraViewModel = CameraViewModel(
+        sessionViewModel: sessionViewModel,
+        bluetoothViewModel: bluetoothViewModel,
+      );
+
       // Iniciar la sesión
       sessionViewModel.startSession();
-      
+
       debugPrint('Sesión iniciada con nueva cámara simplificada');
     });
   }
@@ -65,11 +62,12 @@ class _SessionScreenState extends State<SessionScreen> {
             Image.asset(
               'assets/logo.png',
               height: 32,
-              errorBuilder: (context, error, stackTrace) => const Icon(
-                Icons.sports_basketball,
-                size: 32,
-                color: Colors.white,
-              ),
+              errorBuilder:
+                  (context, error, stackTrace) => const Icon(
+                    Icons.sports_basketball,
+                    size: 32,
+                    color: Colors.white,
+                  ),
             ),
             const SizedBox(width: 8),
             const Text('SmartShot', style: TextStyle(color: Colors.white)),
@@ -80,8 +78,13 @@ class _SessionScreenState extends State<SessionScreen> {
                 return IconButton(
                   onPressed: () => sessionVM.toggleDebugPanel(),
                   icon: Icon(
-                    sessionVM.isDebugPanelVisible ? Icons.bug_report : Icons.bug_report_outlined,
-                    color: sessionVM.isDebugPanelVisible ? Colors.green : Colors.white,
+                    sessionVM.isDebugPanelVisible
+                        ? Icons.bug_report
+                        : Icons.bug_report_outlined,
+                    color:
+                        sessionVM.isDebugPanelVisible
+                            ? Colors.green
+                            : Colors.white,
                     size: 24,
                   ),
                   tooltip: 'Panel de Debug',
@@ -97,9 +100,10 @@ class _SessionScreenState extends State<SessionScreen> {
                   ),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
-                    color: viewModel.isConnected
-                        ? Colors.green.withOpacity(0.2)
-                        : Colors.red.withOpacity(0.2),
+                    color:
+                        viewModel.isConnected
+                            ? Colors.green.withOpacity(0.2)
+                            : Colors.red.withOpacity(0.2),
                     border: Border.all(
                       color: viewModel.isConnected ? Colors.green : Colors.red,
                     ),
@@ -173,19 +177,18 @@ class _SessionScreenState extends State<SessionScreen> {
         children: [
           // Fondo de cámara a pantalla completa
           Positioned.fill(
-            child: _cameraViewModel != null
-                ? ChangeNotifierProvider<CameraViewModel>.value(
-                    value: _cameraViewModel!,
-                    child: const CameraView(
-                      isBackground: true,
-                      backgroundOpacity: 0.7, // 70% visible, 30% oscuro
-                    ),
-                  )
-                : Container(
-                    color: Colors.black,
-                  ),
+            child:
+                _cameraViewModel != null
+                    ? ChangeNotifierProvider<CameraViewModel>.value(
+                      value: _cameraViewModel!,
+                      child: const CameraView(
+                        isBackground: true,
+                        backgroundOpacity: 0.7, // 70% visible, 30% oscuro
+                      ),
+                    )
+                    : Container(color: Colors.black),
           ),
-          
+
           // Contenido principal
           Positioned.fill(
             child: SingleChildScrollView(
@@ -243,85 +246,68 @@ class _SessionScreenState extends State<SessionScreen> {
                     ),
                   ),
 
-                  // Agregar botón de prueba para el Apple Watch antes de los botones de control
-                  Consumer<WatchViewModel>(
-                    builder: (context, watchViewModel, _) {
-                      return Container(
-                        margin: const EdgeInsets.all(16.0),
-                        padding: const EdgeInsets.all(16.0),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.8),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: Colors.purple.withOpacity(0.3),
-                            width: 1,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Apple Watch',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Container(
-                                  width: 12,
-                                  height: 12,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: watchViewModel.isWatchMonitoring
-                                        ? Colors.green
-                                        : Colors.red,
-                                  ),
+                  // GestureDetector oculto para intento de tiro (doble tap)
+                  GestureDetector(
+                    onDoubleTap:
+                        viewModel.isWaitingForShotResult
+                            ? null
+                            : () {
+                              viewModel.attemptShot();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Intento de tiro detectado'),
+                                  duration: Duration(seconds: 2),
+                                  backgroundColor: Colors.orange,
                                 ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  watchViewModel.isWatchMonitoring
-                                      ? 'Conectado y monitoreando'
-                                      : 'No conectado',
-                                  style: TextStyle(
-                                    color: watchViewModel.isWatchMonitoring
-                                        ? Colors.green
-                                        : Colors.red,
-                                  ),
+                              );
+                            },
+                    child: Container(
+                      margin: const EdgeInsets.all(16.0),
+                      padding: const EdgeInsets.all(16.0),
+                      decoration: BoxDecoration(
+                        color: Colors.transparent,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      height: 80, // Área invisible para hacer doble tap
+                      width: double.infinity,
+                      child:
+                          viewModel.isWaitingForShotResult
+                              ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              Colors.orange,
+                                            ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'Esperando respuesta del ESP32...',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.orange,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            ElevatedButton.icon(
-                              onPressed: () {
-                                // Simular un tiro detectado por el Apple Watch
-                                watchViewModel.simulateShotDetection();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Simulando tiro desde Apple Watch'),
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.purple,
-                                foregroundColor: Colors.white,
-                              ),
-                              icon: const Icon(Icons.watch),
-                              label: const Text('Simular tiro'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                              )
+                              : null, // Invisible cuando no está esperando
+                    ),
                   ),
 
                   // Espacio flexible para empujar los botones hacia abajo
                   SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.2, // Reducido para dejar espacio
+                    height:
+                        MediaQuery.of(context).size.height *
+                        0.2, // Reducido para dejar espacio
                   ),
 
                   // Botones de control en la parte inferior
@@ -374,7 +360,7 @@ class _SessionScreenState extends State<SessionScreen> {
               ),
             ),
           ),
-          
+
           // Panel de debug (solo visible cuando está activado)
           if (viewModel.isDebugPanelVisible)
             Positioned(
@@ -395,19 +381,19 @@ class _SessionScreenState extends State<SessionScreen> {
         children: [
           // Fondo de cámara a pantalla completa
           Positioned.fill(
-            child: _cameraViewModel != null
-                ? ChangeNotifierProvider<CameraViewModel>.value(
-                    value: _cameraViewModel!,
-                    child: const CameraView(
-                      isBackground: true,
-                      backgroundOpacity: 0.5, // Más oscuro cuando está pausado
-                    ),
-                  )
-                : Container(
-                    color: Colors.black,
-                  ),
+            child:
+                _cameraViewModel != null
+                    ? ChangeNotifierProvider<CameraViewModel>.value(
+                      value: _cameraViewModel!,
+                      child: const CameraView(
+                        isBackground: true,
+                        backgroundOpacity:
+                            0.5, // Más oscuro cuando está pausado
+                      ),
+                    )
+                    : Container(color: Colors.black),
           ),
-          
+
           // Contenido principal
           Positioned.fill(
             child: Center(
@@ -471,7 +457,10 @@ class _SessionScreenState extends State<SessionScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.orange,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -652,7 +641,7 @@ class _SessionScreenState extends State<SessionScreen> {
               ],
             ),
           ),
-          
+
           // Contenido del panel
           Expanded(
             child: Padding(
@@ -662,21 +651,21 @@ class _SessionScreenState extends State<SessionScreen> {
                 children: [
                   // Estados de conectividad
                   _buildConnectivityStatus(sessionViewModel),
-                  
+
                   const SizedBox(height: 12),
-                  
+
                   // Datos de sensores
                   _buildSensorData(sessionViewModel),
-                  
+
                   const SizedBox(height: 12),
-                  
+
                   // Log de mensajes
                   _buildDebugMessages(sessionViewModel),
                 ],
               ),
             ),
           ),
-          
+
           // Botones de acción
           Container(
             padding: const EdgeInsets.all(8),
@@ -690,23 +679,10 @@ class _SessionScreenState extends State<SessionScreen> {
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 8),
                     ),
-                    child: const Text('Simular datos', style: TextStyle(fontSize: 12)),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Consumer<WatchViewModel>(
-                    builder: (context, watchVM, _) {
-                      return ElevatedButton(
-                        onPressed: () => watchVM.testIntegration(),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.purple,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                        ),
-                        child: const Text('Test Watch', style: TextStyle(fontSize: 12)),
-                      );
-                    },
+                    child: const Text(
+                      'Simular datos',
+                      style: TextStyle(fontSize: 12),
+                    ),
                   ),
                 ),
               ],
@@ -718,8 +694,8 @@ class _SessionScreenState extends State<SessionScreen> {
   }
 
   Widget _buildConnectivityStatus(SessionViewModel sessionViewModel) {
-    return Consumer2<BluetoothViewModel, WatchViewModel>(
-      builder: (context, bluetoothVM, watchVM, _) {
+    return Consumer<BluetoothViewModel>(
+      builder: (context, bluetoothVM, _) {
         return Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
@@ -738,12 +714,16 @@ class _SessionScreenState extends State<SessionScreen> {
                 ),
               ),
               const SizedBox(height: 4),
-              _buildStatusRow('Sesión', sessionViewModel.isSessionActive ? 'Activa' : 'Inactiva', 
-                  sessionViewModel.isSessionActive ? Colors.green : Colors.red),
-              _buildStatusRow('Bluetooth', bluetoothVM.isConnected ? 'Conectado' : 'Desconectado', 
-                  bluetoothVM.isConnected ? Colors.green : Colors.red),
-              _buildStatusRow('Apple Watch', watchVM.isWatchMonitoring ? 'Monitoreando' : 'Inactivo', 
-                  watchVM.isWatchMonitoring ? Colors.green : Colors.red),
+              _buildStatusRow(
+                'Sesión',
+                sessionViewModel.isSessionActive ? 'Activa' : 'Inactiva',
+                sessionViewModel.isSessionActive ? Colors.green : Colors.red,
+              ),
+              _buildStatusRow(
+                'Bluetooth',
+                bluetoothVM.isConnected ? 'Conectado' : 'Desconectado',
+                bluetoothVM.isConnected ? Colors.green : Colors.red,
+              ),
             ],
           ),
         );
@@ -752,8 +732,8 @@ class _SessionScreenState extends State<SessionScreen> {
   }
 
   Widget _buildSensorData(SessionViewModel sessionViewModel) {
-    return Consumer2<BluetoothViewModel, WatchViewModel>(
-      builder: (context, bluetoothVM, watchVM, _) {
+    return Consumer<BluetoothViewModel>(
+      builder: (context, bluetoothVM, _) {
         return Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
@@ -774,11 +754,20 @@ class _SessionScreenState extends State<SessionScreen> {
               const SizedBox(height: 4),
               if (bluetoothVM.isConnected) ...[
                 _buildDataRow('BT Aciertos', bluetoothVM.aciertos.toString()),
-                _buildDataRow('BT Distancia', '${bluetoothVM.distancia.toStringAsFixed(1)}m'),
+                _buildDataRow(
+                  'BT Distancia',
+                  '${bluetoothVM.distancia.toStringAsFixed(1)}m',
+                ),
                 _buildDataRow('BT LED', bluetoothVM.ledState ? 'ON' : 'OFF'),
               ],
-              _buildDataRow('Tiros detectados', sessionViewModel.currentSessionTotalShots.toString()),
-              _buildDataRow('Aciertos', sessionViewModel.successfulShots.toString()),
+              _buildDataRow(
+                'Tiros detectados',
+                sessionViewModel.currentSessionTotalShots.toString(),
+              ),
+              _buildDataRow(
+                'Aciertos',
+                sessionViewModel.successfulShots.toString(),
+              ),
               _buildDataRow('Fallos', sessionViewModel.missedShots.toString()),
             ],
           ),
@@ -840,10 +829,7 @@ class _SessionScreenState extends State<SessionScreen> {
           Container(
             width: 8,
             height: 8,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 6),
           Text(
@@ -853,7 +839,11 @@ class _SessionScreenState extends State<SessionScreen> {
           const SizedBox(width: 4),
           Text(
             value,
-            style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),
@@ -872,7 +862,11 @@ class _SessionScreenState extends State<SessionScreen> {
           const SizedBox(width: 4),
           Text(
             value,
-            style: const TextStyle(color: Colors.cyanAccent, fontSize: 11, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              color: Colors.cyanAccent,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),

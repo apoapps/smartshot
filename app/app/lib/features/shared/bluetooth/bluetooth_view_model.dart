@@ -1,59 +1,78 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+
 import '../connectivity/connectivity_service.dart';
 
-// UUIDs para el servicio BLE y características - Deben coincidir con los del ESP32
-const String SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-const String CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+// UUIDs para el servicio BLE y características - ESP32
+const String ESP32_SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+const String ESP32_CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+
+enum DeviceType { esp32 }
+
+class ConnectedDevice {
+  final BluetoothDevice device;
+  final DeviceType type;
+  final BluetoothCharacteristic? dataCharacteristic;
+
+  ConnectedDevice({
+    required this.device,
+    required this.type,
+    this.dataCharacteristic,
+  });
+}
 
 class BluetoothViewModel extends ChangeNotifier {
-  BluetoothDevice? _device;
-  BluetoothCharacteristic? _characteristic;
-  bool _isConnected = false;
+  // Dispositivos conectados
+  ConnectedDevice? _esp32Device;
+
+  // Estados
   bool _isConnecting = false;
   bool _ledState = false;
   int _aciertos = 0;
   double _distancia = 0;
-  
+
   // Nuevo campo para seguir cuando se detecta un incremento en aciertos
-  int _previousAciertos = 0; 
+  int _previousAciertos = 0;
   bool _shotDetected = false;
-  
+
   // Callback para enviar datos de debug
   Function(String, Map<String, dynamic>)? _debugCallback;
-  
+
   // Referencia al servicio de conectividad
   final ConnectivityService _connectivityService = ConnectivityService();
 
-  bool get isConnected => _isConnected;
+  // Getters existentes
+  bool get isConnected => _esp32Device != null;
+  bool get isEsp32Connected => _esp32Device != null;
   bool get isConnecting => _isConnecting;
   bool get ledState => _ledState;
   int get aciertos => _aciertos;
   double get distancia => _distancia;
-  
-  // Nuevo getter para informar cuando se detecta un tiro
+
+  // Getter para informar cuando se detecta un tiro
   bool get shotDetected {
     if (_shotDetected) {
-      _shotDetected = false;  // Lo reseteamos para que sea un event de un solo uso
+      _shotDetected = false;
       return true;
     }
     return false;
   }
-  
+
   /// Configura el callback para enviar datos de debug
   void setDebugCallback(Function(String, Map<String, dynamic>) callback) {
     _debugCallback = callback;
   }
-  
+
   /// Envía datos de debug si hay un callback configurado
   void _sendDebugData(String message, Map<String, dynamic> data) {
     _debugCallback?.call(message, data);
   }
 
-  // Escanear y conectar al primer dispositivo encontrado con el nombre ESP32
+  // Escanear y conectar a dispositivos ESP32
   Future<void> scanAndConnect() async {
     _isConnecting = true;
     notifyListeners();
@@ -62,105 +81,92 @@ class BluetoothViewModel extends ChangeNotifier {
       // Verificar estado del Bluetooth antes de escanear
       final bluetoothState = await FlutterBluePlus.adapterState.first;
       debugPrint('🔵 Estado del Bluetooth: $bluetoothState');
-      
+
       if (bluetoothState != BluetoothAdapterState.on) {
         debugPrint('❌ Bluetooth no está encendido. Estado: $bluetoothState');
         _isConnecting = false;
         notifyListeners();
         return;
       }
-      
-      debugPrint('🔍 Iniciando escaneo de dispositivos...');
-      
+
+      debugPrint('🔍 Iniciando escaneo de dispositivos ESP32...');
+
       // Verificar si ya estamos escaneando
       if (await FlutterBluePlus.isScanning.first) {
         debugPrint('⚠️ Ya se está ejecutando un escaneo - deteniéndolo');
         await FlutterBluePlus.stopScan();
         await Future.delayed(Duration(milliseconds: 500));
       }
-      
+
       // Iniciar el escaneo
-      await FlutterBluePlus.startScan(
-        timeout: const Duration(seconds: 10),
-      );
+      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
 
       // Escuchar los resultados del escaneo
-      bool deviceFound = false;
+      bool esp32Found = false;
+
       await for (final result in FlutterBluePlus.scanResults) {
         for (ScanResult r in result) {
-          debugPrint('📱 Dispositivo encontrado: ${r.device.advName} (${r.device.remoteId})');
-          
-          // Busca un dispositivo con ESP32 en el nombre o con el UUID esperado
-          if (r.device.advName.toLowerCase().contains('esp32') || 
-              r.device.advName.toLowerCase().contains('smartshot')) {
-            debugPrint('✅ Dispositivo SmartShot encontrado: ${r.device.advName}');
-            
-            await FlutterBluePlus.stopScan();
-            deviceFound = true;
-            
-            // Conectarse al dispositivo
-            await _connectToDevice(r.device);
-            return;
+          debugPrint(
+            '📱 Dispositivo encontrado: ${r.device.advName} (${r.device.remoteId})',
+          );
+
+          // Buscar ESP32
+          if (!esp32Found &&
+              (r.device.advName.toLowerCase().contains('esp32') ||
+                  r.device.advName.toLowerCase().contains('smartshot'))) {
+            debugPrint(
+              '✅ Dispositivo ESP32 SmartShot encontrado: ${r.device.advName}',
+            );
+            esp32Found = true;
+            await _connectToEsp32(r.device);
+            break;
           }
         }
+
+        if (esp32Found) break;
       }
 
-      // Si llegamos aquí, no se encontró el dispositivo
-      if (!deviceFound) {
-        debugPrint('❌ No se encontró el dispositivo SmartShot');
+      // Información sobre dispositivos encontrados
+      if (!esp32Found) {
+        debugPrint('❌ No se encontró dispositivo ESP32 SmartShot');
       }
-      
-      _isConnecting = false;
-      notifyListeners();
     } catch (e) {
       debugPrint('❌ Error al escanear/conectar: $e');
-      
-      // Manejar diferentes tipos de errores
-      if (e.toString().contains('bluetooth must be turned on')) {
-        debugPrint('💡 Sugerencia: Habilita Bluetooth en Configuración');
-      } else if (e.toString().contains('CBManagerStateUnknown')) {
-        debugPrint('💡 Esperando inicialización del Bluetooth...');
-        // Intentar de nuevo después de un delay
-        await Future.delayed(Duration(seconds: 2));
-        if (await FlutterBluePlus.adapterState.first == BluetoothAdapterState.on) {
-          debugPrint('🔄 Bluetooth ya disponible, reintentando...');
-          _isConnecting = false;
-          scanAndConnect(); // Reintentar una vez
-          return;
-        }
-      }
-      
+      _handleBluetoothError(e);
+    } finally {
       _isConnecting = false;
       notifyListeners();
     }
   }
 
-  // Conectar a un dispositivo específico
-  Future<void> _connectToDevice(BluetoothDevice device) async {
+  // Conectar específicamente al ESP32
+  Future<void> _connectToEsp32(BluetoothDevice device) async {
     try {
+      debugPrint('🔄 Conectando al ESP32...');
       await device.connect();
-      _device = device;
 
       // Descubrir servicios
       List<BluetoothService> services = await device.discoverServices();
 
-      // Buscar el servicio y característica específicos definidos en el ESP32
+      // Buscar el servicio y característica específicos del ESP32
+      BluetoothCharacteristic? dataCharacteristic;
+
       for (BluetoothService service in services) {
         if (service.serviceUuid.toString().toUpperCase().contains(
-          SERVICE_UUID.toUpperCase(),
+          ESP32_SERVICE_UUID.toUpperCase(),
         )) {
           for (BluetoothCharacteristic characteristic
               in service.characteristics) {
             if (characteristic.characteristicUuid
                 .toString()
                 .toUpperCase()
-                .contains(CHARACTERISTIC_UUID.toUpperCase())) {
-              _characteristic = characteristic;
+                .contains(ESP32_CHARACTERISTIC_UUID.toUpperCase())) {
+              dataCharacteristic = characteristic;
 
               // Configurar notificaciones para recibir respuestas
-              await _characteristic!.setNotifyValue(true);
-              _characteristic!.onValueReceived.listen((data) {
-                _handleResponse(data);
+              await characteristic.setNotifyValue(true);
+              characteristic.onValueReceived.listen((data) {
+                _handleEsp32Response(data);
               });
 
               break;
@@ -169,153 +175,142 @@ class BluetoothViewModel extends ChangeNotifier {
         }
       }
 
-      _isConnected = _characteristic != null;
+      if (dataCharacteristic != null) {
+        _esp32Device = ConnectedDevice(
+          device: device,
+          type: DeviceType.esp32,
+          dataCharacteristic: dataCharacteristic,
+        );
 
-      if (!_isConnected) {
-      //  print('Característica BLE no encontrada');
-        _sendDebugData('Bluetooth', {'error': 'Característica BLE no encontrada'});
-        await disconnect();
-      } else {
-        _sendDebugData('Bluetooth', {
+        debugPrint('✅ ESP32 conectado exitosamente');
+        _sendDebugData('ESP32', {
           'connected': true,
           'device': device.advName,
           'serviceFound': true,
         });
+      } else {
+        debugPrint('❌ Característica ESP32 no encontrada');
+        await device.disconnect();
       }
-      
-      // Actualizar el servicio de conectividad
-      _connectivityService.updateBluetoothStatus(_isConnected);
     } catch (e) {
-  //    print('Error al conectar: $e');
-      await disconnect();
-    } finally {
-      _isConnecting = false;
-      notifyListeners();
-    }
-  }
-
-  // Desconectar
-  Future<void> disconnect() async {
-    if (_device != null) {
-      try {
-        await _device!.disconnect();
-      } catch (e) {
-        print('Error al desconectar: $e');
-      }
+      debugPrint('❌ Error al conectar ESP32: $e');
+      await device.disconnect();
     }
 
-    _device = null;
-    _characteristic = null;
-    _isConnected = false;
-    
     // Actualizar el servicio de conectividad
-    _connectivityService.updateBluetoothStatus(false);
-    
+    _connectivityService.updateBluetoothStatus(isConnected);
     notifyListeners();
   }
 
-  // Encender/apagar el LED
-  Future<void> toggleLed(bool state) async {
-    if (_characteristic != null) {
+  // Manejar errores de Bluetooth
+  void _handleBluetoothError(dynamic e) {
+    if (e.toString().contains('bluetooth must be turned on')) {
+      debugPrint('💡 Sugerencia: Habilita Bluetooth en Configuración');
+    } else if (e.toString().contains('CBManagerStateUnknown')) {
+      debugPrint('💡 Esperando inicialización del Bluetooth...');
+      // Intentar de nuevo después de un delay
+      Future.delayed(Duration(seconds: 2)).then((_) async {
+        if (await FlutterBluePlus.adapterState.first ==
+            BluetoothAdapterState.on) {
+          debugPrint('🔄 Bluetooth ya disponible, reintentando...');
+          scanAndConnect();
+        }
+      });
+    }
+  }
+
+  // Desconectar todos los dispositivos
+  Future<void> disconnect() async {
+    // Desconectar ESP32
+    if (_esp32Device != null) {
       try {
-        // Crear un JSON con el comando
+        await _esp32Device!.device.disconnect();
+        debugPrint('✅ ESP32 desconectado');
+      } catch (e) {
+        debugPrint('❌ Error al desconectar ESP32: $e');
+      }
+      _esp32Device = null;
+    }
+
+    // Actualizar el servicio de conectividad
+    _connectivityService.updateBluetoothStatus(false);
+
+    notifyListeners();
+  }
+
+  // Métodos específicos para ESP32
+  Future<void> toggleLed(bool state) async {
+    if (_esp32Device?.dataCharacteristic != null) {
+      try {
         final Map<String, dynamic> command = {
           'command': 'led',
           'state': state ? 1 : 0,
         };
 
-        // Convertir a string y luego a bytes
         final String jsonStr = jsonEncode(command);
         final List<int> bytes = utf8.encode(jsonStr);
 
-        // Escribir en la característica
-        await _characteristic!.write(bytes);
-
-        // Estado se actualizará cuando recibamos la notificación de respuesta
+        await _esp32Device!.dataCharacteristic!.write(bytes);
       } catch (e) {
-        print('Error al enviar comando: $e');
+        debugPrint('❌ Error al enviar comando LED: $e');
       }
     }
   }
 
-  // Solicitar el estado actual del LED
   Future<void> requestLedState() async {
-    if (_characteristic != null) {
+    if (_esp32Device?.dataCharacteristic != null) {
       try {
-        // Comando para solicitar estado
         final Map<String, dynamic> command = {'command': 'status'};
-
         final String jsonStr = jsonEncode(command);
         final List<int> bytes = utf8.encode(jsonStr);
 
-        // Escribir en la característica
-        await _characteristic!.write(bytes);
-
-        // La respuesta se procesará en el listener configurado en _connectToDevice
+        await _esp32Device!.dataCharacteristic!.write(bytes);
       } catch (e) {
-        print('Error al solicitar estado: $e');
+        debugPrint('❌ Error al solicitar estado LED: $e');
       }
     }
   }
 
-  // Manejar la respuesta recibida del ESP32
-  void _handleResponse(List<int> value) {
+  // Manejar respuestas del ESP32
+  void _handleEsp32Response(List<int> value) {
     try {
-      // Debug: mostrar los bytes recibidos
-     // print('Bytes recibidos: ${value.toString()}');
-      
-      // Intenta decodificar sólo si hay bytes suficientes
-      if (value.isEmpty) {
-     //   print('Se recibió una lista vacía de bytes');
-        return;
-      }
-      
+      if (value.isEmpty) return;
+
       // Si recibimos exactamente 4 bytes, podría ser un float IEEE-754
       if (value.length == 4) {
-        // Intenta tratarlo como un valor flotante (Little Endian)
         try {
-          // Convertir 4 bytes a ByteData para leer como float
           final buffer = Uint8List.fromList(value).buffer;
           final byteData = ByteData.view(buffer);
           final valorFloat = byteData.getFloat32(0, Endian.little);
-          
-      //    print('Interpretando como float: $valorFloat');
-          
-          // Actualizar la distancia si parece un valor válido
+
           if (valorFloat >= 0 && valorFloat < 1000) {
             _distancia = valorFloat;
             notifyListeners();
             return;
           }
         } catch (e) {
-          print('Error al interpretar como float: $e');
+          debugPrint('❌ Error al interpretar como float: $e');
         }
       }
-      
+
       // Intenta convertir bytes a string
       String response;
       try {
         response = utf8.decode(value);
-    //    print('Texto recibido: $response');
       } catch (e) {
-      print('Error al decodificar UTF-8: $e');
-        print('Bytes individuales: ${value.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}');
+        debugPrint('❌ Error al decodificar UTF-8: $e');
         return;
       }
-      
-      // Verificar que el texto tenga formato de JSON
+
       if (!response.startsWith('{') || !response.endsWith('}')) {
-  //      print('Formato no válido de JSON: $response');
         return;
       }
-      
-      // Intenta parsear el JSON
+
       Map<String, dynamic> data;
       try {
         data = jsonDecode(response);
-  //      print('JSON decodificado: $data');
       } catch (e) {
-        print('Error al decodificar JSON: $e');
+        debugPrint('❌ Error al decodificar JSON: $e');
         return;
       }
 
@@ -328,36 +323,36 @@ class BluetoothViewModel extends ChangeNotifier {
             try {
               _distancia = (data['distancia'] as num).toDouble();
             } catch (e) {
-              print('Error al convertir distancia: $e');
+              debugPrint('❌ Error al convertir distancia: $e');
             }
           }
-          
+
           if (data.containsKey('aciertos')) {
             try {
-              // Guardamos el valor anterior para comparar
               _previousAciertos = _aciertos;
               _aciertos = data['aciertos'] ?? 0;
-              
-              // Si hubo un incremento en aciertos, activamos la señal
+
               if (_aciertos > _previousAciertos) {
-                print('¡Acierto detectado! Incremento de $_previousAciertos a $_aciertos');
+                debugPrint(
+                  '🏀 ¡Acierto detectado por ESP32! $_previousAciertos -> $_aciertos',
+                );
                 _shotDetected = true;
-                _sendDebugData('Bluetooth', {
+                _sendDebugData('ESP32', {
                   'shotDetected': true,
                   'previousAciertos': _previousAciertos,
                   'newAciertos': _aciertos,
                 });
               }
             } catch (e) {
-              print('Error al convertir aciertos: $e');
+              debugPrint('❌ Error al convertir aciertos: $e');
             }
           }
-          
+
           notifyListeners();
         }
       }
     } catch (e) {
-      print('Error general al procesar respuesta: $e');
+      debugPrint('❌ Error general al procesar respuesta ESP32: $e');
     }
   }
-} 
+}

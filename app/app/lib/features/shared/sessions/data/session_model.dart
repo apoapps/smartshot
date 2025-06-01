@@ -33,10 +33,9 @@ class SessionModel extends HiveObject {
   }) : id = id ?? const Uuid().v4();
 
   int get missedShots => totalShots - successfulShots;
-  
-  double get successRate => totalShots > 0 
-      ? (successfulShots / totalShots) * 100 
-      : 0.0;
+
+  double get successRate =>
+      totalShots > 0 ? (successfulShots / totalShots) * 100 : 0.0;
 }
 
 @HiveType(typeId: 1)
@@ -73,13 +72,10 @@ class ShotClip extends HiveObject {
 enum ShotDetectionType {
   @HiveField(0)
   sensor,
-  
+
   @HiveField(1)
   camera,
-  
+
   @HiveField(2)
   manual,
-  
-  @HiveField(3)
-  watch
-} 
+}

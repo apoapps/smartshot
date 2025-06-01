@@ -2,13 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:camera/camera.dart';
 import 'camera_view_model.dart';
-import 'package:app/features/shared/watch/watch_service.dart';
 import 'package:app/features/shared/bluetooth/bluetooth_view_model.dart';
 
 class CameraView extends StatefulWidget {
   final bool isBackground;
   final double backgroundOpacity;
-  
+
   const CameraView({
     super.key,
     this.isBackground = false,
@@ -23,26 +22,20 @@ class _CameraViewState extends State<CameraView>
     with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _pulseAnimation;
-  final WatchService _watchService = WatchService();
-  bool _appleWatchConnected = false;
 
   @override
   void initState() {
     super.initState();
-    
+
     // Animación para el indicador de detección
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 1000),
       vsync: this,
     );
-    
-    _pulseAnimation = Tween<double>(
-      begin: 1.0,
-      end: 1.3,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
+
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
 
     _animationController.repeat(reverse: true);
 
@@ -50,16 +43,6 @@ class _CameraViewState extends State<CameraView>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final cameraVM = Provider.of<CameraViewModel>(context, listen: false);
       cameraVM.initialize();
-      
-      // Inicializar Apple Watch
-      _initializeAppleWatch();
-    });
-  }
-  
-  Future<void> _initializeAppleWatch() async {
-    await _watchService.initialize();
-    setState(() {
-      _appleWatchConnected = true;
     });
   }
 
@@ -131,8 +114,8 @@ class _CameraViewState extends State<CameraView>
             ElevatedButton(
               onPressed: () {
                 final cameraVM = Provider.of<CameraViewModel>(
-                  context, 
-                  listen: false
+                  context,
+                  listen: false,
                 );
                 cameraVM.initialize();
               },
@@ -173,10 +156,8 @@ class _CameraViewState extends State<CameraView>
       child: Stack(
         children: [
           // Vista de cámara
-          Positioned.fill(
-            child: CameraPreview(cameraVM.cameraController!),
-          ),
-          
+          Positioned.fill(child: CameraPreview(cameraVM.cameraController!)),
+
           // Panel de estado de dispositivos
           Positioned(
             top: 40,
@@ -193,29 +174,49 @@ class _CameraViewState extends State<CameraView>
             child: _buildControlPanel(cameraVM),
           ),
 
-          // Botón para simular un tiro desde el Apple Watch
+          // Botón para intento de tiro (más pequeño, abajo a la derecha, sin texto)
           Positioned(
-            right: 20,
-            bottom: 100,
-            child: FloatingActionButton(
-              backgroundColor: Colors.orange.withOpacity(0.7),
-              onPressed: () => _watchService.simulateShotDetection(),
-              mini: true,
-              tooltip: 'Simular tiro desde Apple Watch',
-              child: const Icon(Icons.sports_basketball),
+            right: 16,
+            bottom: 16,
+            child: Consumer<CameraViewModel>(
+              builder: (context, cameraVM, _) {
+                return FloatingActionButton.small(
+                  backgroundColor:
+                      cameraVM.isWaitingForShot
+                          ? Colors.orange.withOpacity(0.5)
+                          : Colors.orange.withOpacity(0.8),
+                  onPressed:
+                      cameraVM.isWaitingForShot
+                          ? null
+                          : () => cameraVM.simulateShotAttempt(),
+                  child:
+                      cameraVM.isWaitingForShot
+                          ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          )
+                          : const Icon(Icons.sports_basketball, size: 20),
+                );
+              },
             ),
           ),
-          
-          // Botón para iniciar/detener monitoreo de Apple Watch
+
+          // Botón para conectar Bluetooth
           Positioned(
             left: 20,
             bottom: 100,
             child: FloatingActionButton(
               backgroundColor: Colors.blue.withOpacity(0.7),
-              onPressed: () => _toggleWatchMonitoring(cameraVM),
+              onPressed: () => _toggleBluetoothConnection(),
               mini: true,
-              tooltip: 'Activar/Desactivar monitoreo de Apple Watch',
-              child: const Icon(Icons.watch),
+              tooltip: 'Conectar/Desconectar Bluetooth',
+              child: const Icon(Icons.bluetooth),
             ),
           ),
         ],
@@ -226,56 +227,59 @@ class _CameraViewState extends State<CameraView>
   Widget _buildDeviceStatusPanel() {
     // Obtener el BluetoothViewModel para verificar estado
     final bluetoothVM = Provider.of<BluetoothViewModel>(context);
-    
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.8),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.grey,
-          width: 2,
-        ),
+        border: Border.all(color: Colors.grey, width: 2),
       ),
-      child: Column(
+      child: Row(
         children: [
-          Row(
-            children: [
-              Icon(
-                Icons.bluetooth,
-                color: bluetoothVM.isConnected ? Colors.blue : Colors.grey,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Sensor Bluetooth: ${bluetoothVM.isConnected ? 'Conectado' : 'Desconectado'}',
-                style: TextStyle(
-                  color: bluetoothVM.isConnected ? Colors.blue : Colors.white70,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-            ],
+          Icon(
+            Icons.bluetooth,
+            color: bluetoothVM.isEsp32Connected ? Colors.blue : Colors.grey,
+            size: 20,
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(
-                Icons.watch,
-                color: _appleWatchConnected ? Colors.green : Colors.grey,
-                size: 20,
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Sensor ESP32: ${bluetoothVM.isEsp32Connected ? 'Conectado' : 'Desconectado'}',
+              style: TextStyle(
+                color:
+                    bluetoothVM.isEsp32Connected ? Colors.blue : Colors.white70,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
               ),
-              const SizedBox(width: 8),
-              Text(
-                'Apple Watch: ${_appleWatchConnected ? 'Conectado' : 'No conectado'}',
-                style: TextStyle(
-                  color: _appleWatchConnected ? Colors.green : Colors.white70,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-            ],
+            ),
           ),
+          if (bluetoothVM.isEsp32Connected) ...[
+            const SizedBox(width: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green, width: 1),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.circle, color: Colors.green, size: 8),
+                  const SizedBox(width: 4),
+                  Text(
+                    'ACTIVO',
+                    style: TextStyle(
+                      color: Colors.green,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -292,22 +296,16 @@ class _CameraViewState extends State<CameraView>
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _buildControlButton(
-            icon: Icons.watch,
-            label: 'APPLE WATCH',
-            color: Colors.blue,
-            onTap: () => _toggleWatchMonitoring(cameraVM),
-          ),
-          _buildControlButton(
             icon: Icons.bluetooth,
-            label: 'BLUETOOTH',
-            color: Colors.green,
+            label: 'CONECTAR ESP32',
+            color: Colors.blue,
             onTap: () => _toggleBluetoothConnection(),
           ),
           _buildControlButton(
             icon: Icons.sports_basketball,
-            label: 'SIMULAR',
+            label: 'SIMULAR TIRO',
             color: Colors.orange,
-            onTap: () => _watchService.simulateShotDetection(),
+            onTap: () => cameraVM.simulateShotAttempt(),
           ),
         ],
       ),
@@ -347,37 +345,15 @@ class _CameraViewState extends State<CameraView>
       ),
     );
   }
-  
-  Future<void> _toggleWatchMonitoring(CameraViewModel cameraVM) async {
-    // Esta función alternará el monitoreo del Apple Watch
-    if (_appleWatchConnected) {
-      await cameraVM.startWatchMonitoring();
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Monitoreo de Apple Watch activado'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Apple Watch no conectado'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-  
+
   void _toggleBluetoothConnection() {
-    // Esta función alternará la conexión Bluetooth
     final bluetoothVM = Provider.of<BluetoothViewModel>(context, listen: false);
-    
-    if (bluetoothVM.isConnected) {
+
+    if (bluetoothVM.isEsp32Connected) {
       bluetoothVM.disconnect();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Sensor Bluetooth desconectado'),
+          content: Text('Sensor ESP32 desconectado'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -385,10 +361,10 @@ class _CameraViewState extends State<CameraView>
       bluetoothVM.scanAndConnect();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Conectando sensor Bluetooth...'),
+          content: Text('Conectando sensor ESP32...'),
           backgroundColor: Colors.blue,
         ),
       );
     }
   }
-} 
+}
